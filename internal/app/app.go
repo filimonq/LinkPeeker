@@ -1,3 +1,4 @@
+// Package app assembles and runs the application.
 package app
 
 import (
@@ -16,15 +17,18 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/telegram"
 )
 
+// App is the main application container.
 type App struct {
 	logger *slog.Logger
 	cfg    *config.Config
 }
 
+// New creates a new App instance.
 func New(logger *slog.Logger, cfg *config.Config) *App {
 	return &App{logger: logger, cfg: cfg}
 }
 
+// Run initializes and starts the bot application.
 func (a *App) Run() error {
 	api, err := tgbotapi.NewBotAPI(a.cfg.TelegramToken)
 	if err != nil {

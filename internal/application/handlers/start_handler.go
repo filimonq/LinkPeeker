@@ -6,29 +6,34 @@ import (
 	"fmt"
 	"time"
 
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/interfaces"
+	repository "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/interfaces"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/models"
 )
 
+// StartHandler handles the /start command.
 type StartHandler struct {
-	repo interfaces.UserRepository
+	repo repository.UserRepository
 }
 
-func NewStartHandler(repo interfaces.UserRepository) *StartHandler {
+// NewStartHandler creates a new StartHandler.
+func NewStartHandler(repo repository.UserRepository) *StartHandler {
 	return &StartHandler{repo: repo}
 }
 
+// Meta returns command metadata for Telegram registration.
 func (h *StartHandler) Meta() models.CommandMeta {
 	return models.CommandMeta{Name: "start", Description: "Начать работу с ботом"}
 }
 
+// CommandType returns the command type this handler processes.
 func (h *StartHandler) CommandType() models.CommandType { return models.CommandStart }
 
+// Handle processes the /start command.
 func (h *StartHandler) Handle(ctx context.Context, cmd models.Command) (models.OutgoingMessage, error) {
 	_, err := h.repo.FindByID(ctx, cmd.From)
 
 	if err != nil {
-		if !errors.Is(err, interfaces.ErrUserNotFound) {
+		if !errors.Is(err, repository.ErrUserNotFound) {
 			return models.OutgoingMessage{}, fmt.Errorf("failed to check user existence: %w", err)
 		}
 

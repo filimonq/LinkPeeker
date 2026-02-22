@@ -9,14 +9,17 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/models"
 )
 
+// Registry registers bot commands in Telegram UI.
 type Registry struct {
 	api *tgbotapi.BotAPI
 }
 
+// NewRegistry creates a new Registry instance.
 func NewRegistry(api *tgbotapi.BotAPI) *Registry {
 	return &Registry{api: api}
 }
 
+// Register calls setMyCommands Telegram API method.
 func (r *Registry) Register(_ context.Context, commands []models.CommandMeta) error {
 	tgCmds := make([]tgbotapi.BotCommand, len(commands))
 	for i, c := range commands {

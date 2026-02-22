@@ -1,3 +1,4 @@
+// Package config provides application configuration loading.
 package config
 
 import (
@@ -5,10 +6,12 @@ import (
 	"os"
 )
 
+// Config holds application configuration.
 type Config struct {
 	TelegramToken string
 }
 
+// Load reads configuration from environment variables.
 func Load() (*Config, error) {
 	token := os.Getenv("TELEGRAM_TOKEN")
 	if token == "" {

@@ -1,3 +1,4 @@
+// Package telegram provides Telegram bot infrastructure.
 package telegram
 
 import (
@@ -9,16 +10,19 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/models"
 )
 
+// Bot handles Telegram updates via long polling.
 type Bot struct {
 	api     *tgbotapi.BotAPI
 	service application.BotService
 	logger  *slog.Logger
 }
 
+// NewBot creates a new Bot instance.
 func NewBot(api *tgbotapi.BotAPI, service application.BotService, logger *slog.Logger) *Bot {
 	return &Bot{api: api, service: service, logger: logger}
 }
 
+// Start begins polling for updates and blocks until ctx is cancelled.
 func (b *Bot) Start(ctx context.Context) {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
