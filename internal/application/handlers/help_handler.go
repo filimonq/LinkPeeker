@@ -4,7 +4,7 @@ package handlers
 import (
 	"context"
 
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/models"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
 // HelpHandler handles the /help command.
@@ -16,18 +16,18 @@ func NewHelpHandler() *HelpHandler {
 }
 
 // Meta returns command metadata for Telegram registration.
-func (h *HelpHandler) Meta() models.CommandMeta {
-	return models.CommandMeta{Name: "help", Description: "Список доступных команд"}
+func (h *HelpHandler) Meta() domain.CommandMeta {
+	return domain.CommandMeta{Name: "help", Description: "Список доступных команд"}
 }
 
 // CommandType returns the command type this handler processes.
-func (h *HelpHandler) CommandType() models.CommandType {
-	return models.CommandHelp
+func (h *HelpHandler) CommandType() domain.CommandType {
+	return domain.CommandHelp
 }
 
 // Handle processes the /help command and returns available commands list.
-func (h *HelpHandler) Handle(_ context.Context, cmd models.Command) (models.OutgoingMessage, error) {
-	return models.OutgoingMessage{
+func (h *HelpHandler) Handle(_ context.Context, cmd domain.Command) (domain.OutgoingMessage, error) {
+	return domain.OutgoingMessage{
 		ChatID: cmd.ChatID,
 		Text:   "Доступные команды:\n/start - начать работу\n/help - вывести список доступных команд",
 	}, nil

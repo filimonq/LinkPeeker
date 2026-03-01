@@ -1,4 +1,4 @@
-package models
+package domain
 
 // OutgoingMessage represents a message to be sent to a chat.
 type OutgoingMessage struct {

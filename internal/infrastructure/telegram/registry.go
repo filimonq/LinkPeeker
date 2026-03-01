@@ -6,7 +6,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/models"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
 // Registry registers bot commands in Telegram UI.
@@ -20,7 +20,7 @@ func NewRegistry(api *tgbotapi.BotAPI) *Registry {
 }
 
 // Register calls setMyCommands Telegram API method.
-func (r *Registry) Register(_ context.Context, commands []models.CommandMeta) error {
+func (r *Registry) Register(_ context.Context, commands []domain.CommandMeta) error {
 	tgCmds := make([]tgbotapi.BotCommand, len(commands))
 	for i, c := range commands {
 		tgCmds[i] = tgbotapi.BotCommand{

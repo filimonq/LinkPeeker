@@ -7,7 +7,8 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/models"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/user"
 )
 
 // Bot handles Telegram updates via long polling.
@@ -68,25 +69,25 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	b.sendMessage(response)
 }
 
-func (b *Bot) parseCommand(msg *tgbotapi.Message) models.Command {
-	cmdType := models.CommandUnknown
+func (b *Bot) parseCommand(msg *tgbotapi.Message) domain.Command {
+	cmdType := domain.CommandUnknown
 
 	rawCmd := "/" + msg.Command()
-	switch models.CommandType(rawCmd) {
-	case models.CommandStart, models.CommandHelp:
-		cmdType = models.CommandType(rawCmd)
+	switch domain.CommandType(rawCmd) {
+	case domain.CommandStart, domain.CommandHelp:
+		cmdType = domain.CommandType(rawCmd)
 	}
 
-	return models.Command{
+	return domain.Command{
 		Type:     cmdType,
 		Payload:  msg.CommandArguments(),
-		From:     models.UserID(msg.From.ID),
+		From:     user.ID(msg.From.ID),
 		ChatID:   msg.Chat.ID,
 		FromUser: msg.From.UserName,
 	}
 }
 
-func (b *Bot) sendMessage(msg models.OutgoingMessage) {
+func (b *Bot) sendMessage(msg domain.OutgoingMessage) {
 	m := tgbotapi.NewMessage(msg.ChatID, msg.Text)
 	if _, err := b.api.Send(m); err != nil {
 		b.logger.Error("send message failed",
