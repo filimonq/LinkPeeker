@@ -1,0 +1,75 @@
+version: "2"
+run:
+  tests: true
+  timeout: 5m
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - goconst
+    - dupl
+    - unconvert
+    - misspell
+    - whitespace
+    - gosec
+    - gocyclo        
+    - nestif         
+    - nakedret       
+    - unparam        
+    - goprintffuncname
+    - dogsled
+    - bodyclose      
+    - mnd            
+    - revive     
+    - funlen    
+    
+    - gocritic
+
+linters-settings:
+  dupl:
+    threshold: 100
+  
+  gocyclo:
+    min-complexity: 10 
+  
+  nestif:
+    min-complexity: 5
+
+  funlen:
+    lines: 70
+    statements: 50
+  
+  gocritic:
+    enabled-tags:
+      - diagnostic  
+      - style  
+    disabled-checks:
+      - commentedOutCode
+      - unnecessaryBlock
+  
+  lll:
+    line-length: 140
+  mnd:
+    ignored-numbers:
+      - '0'
+      - '1'
+      - '2'
+      - '10'
+      - '100'
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - lll
+        - dupl
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
