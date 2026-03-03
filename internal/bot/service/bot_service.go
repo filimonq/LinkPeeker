@@ -1,5 +1,5 @@
-// Package application contains business logic and use cases.
-package application
+// Package service contains business logic and use cases.
+package service
 
 import (
 	"context"

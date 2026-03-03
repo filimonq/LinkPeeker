@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/application"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/user"
 )
@@ -14,12 +14,12 @@ import (
 // Bot handles Telegram updates via long polling.
 type Bot struct {
 	api     *tgbotapi.BotAPI
-	service application.BotService
+	service service.BotService
 	logger  *slog.Logger
 }
 
 // NewBot creates a new Bot instance.
-func NewBot(api *tgbotapi.BotAPI, service application.BotService, logger *slog.Logger) *Bot {
+func NewBot(api *tgbotapi.BotAPI, service service.BotService, logger *slog.Logger) *Bot {
 	return &Bot{api: api, service: service, logger: logger}
 }
 

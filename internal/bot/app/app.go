@@ -7,25 +7,22 @@ import (
 	"log/slog"
 	"os/signal"
 	"syscall"
-
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/di"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/infrastructure/config"
 )
 
 // App is the main application container.
 type App struct {
 	logger *slog.Logger
-	cfg    *config.Config
+	cfg    *Config
 }
 
 // New creates a new App instance.
-func New(logger *slog.Logger, cfg *config.Config) *App {
+func New(logger *slog.Logger, cfg *Config) *App {
 	return &App{logger: logger, cfg: cfg}
 }
 
 // Run initializes and starts the bot application.
 func (a *App) Run() error {
-	container, err := di.New(a.cfg, a.logger)
+	container, err := NewContainer(a.cfg, a.logger)
 	if err != nil {
 		return fmt.Errorf("build container: %w", err)
 	}
