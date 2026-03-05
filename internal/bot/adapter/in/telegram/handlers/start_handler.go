@@ -6,17 +6,18 @@ import (
 	"fmt"
 	"time"
 
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
 )
 
 // StartHandler handles the /start command.
 type StartHandler struct {
-	repo user.Repository
+	repo service.UserRepository
 }
 
 // NewStartHandler creates a new StartHandler.
-func NewStartHandler(repo user.Repository) *StartHandler {
+func NewStartHandler(repo service.UserRepository) *StartHandler {
 	return &StartHandler{repo: repo}
 }
 

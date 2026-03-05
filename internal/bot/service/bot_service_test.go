@@ -1,20 +1,20 @@
-package service
+package service_test
 
 import (
 	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/telegram/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/repository/memory"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
 )
 
-func newSvc() BotService {
+func newSvc() service.BotService {
 	userRepo := memory.NewUserRepository()
-	return NewBotService([]CommandHandler{
+	return service.NewBotService([]service.CommandHandler{
 		handlers.NewStartHandler(userRepo),
 		handlers.NewHelpHandler(),
 	})
@@ -54,7 +54,7 @@ func TestBotService_Handle(t *testing.T) {
 
 func TestBotService_Start_ExistingUser(t *testing.T) {
 	userRepo := memory.NewUserRepository()
-	svc := NewBotService([]CommandHandler{
+	svc := service.NewBotService([]service.CommandHandler{
 		handlers.NewStartHandler(userRepo),
 	})
 

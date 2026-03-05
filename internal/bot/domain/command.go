@@ -1,7 +1,7 @@
 // Package domain contains domain entities.
 package domain
 
-import "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/user"
+import "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
 
 // CommandType represents a bot command string.
 type CommandType string

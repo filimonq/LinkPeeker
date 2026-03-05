@@ -1,4 +1,3 @@
-// Package di provides dependency injection container.
 package app
 
 import (
@@ -9,8 +8,8 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/telegram"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/telegram/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/repository/memory"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
 )
 
 // Container holds all application dependencies.
@@ -20,7 +19,7 @@ type Container struct {
 	Metas    []domain.CommandMeta
 }
 
-// New builds and wires all dependencies.
+// NewContainer builds and wires all dependencies.
 func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	tgClient, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {

@@ -5,7 +5,7 @@ import (
 	"context"
 	"sync"
 
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
 )
 
 type userRepository struct {
@@ -14,7 +14,7 @@ type userRepository struct {
 }
 
 // NewUserRepository creates a new in-memory user repository.
-func NewUserRepository() user.Repository {
+func NewUserRepository() *userRepository {
 	return &userRepository{
 		users: make(map[user.ID]*user.User),
 	}

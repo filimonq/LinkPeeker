@@ -4,8 +4,15 @@ package service
 import (
 	"context"
 
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
 )
+
+// UserRepository defines storage operations for users.
+type UserRepository interface {
+	FindByID(ctx context.Context, id user.ID) (*user.User, error)
+	Save(ctx context.Context, u *user.User) error
+}
 
 // CommandHandler processes a specific bot command.
 type CommandHandler interface {
