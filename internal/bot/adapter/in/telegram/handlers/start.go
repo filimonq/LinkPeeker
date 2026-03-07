@@ -13,12 +13,13 @@ import (
 
 // StartHandler handles the /start command.
 type StartHandler struct {
-	repo service.UserRepository
+	repo     service.UserRepository
+	scrapper service.ScrapperClient
 }
 
 // NewStartHandler creates a new StartHandler.
-func NewStartHandler(repo service.UserRepository) *StartHandler {
-	return &StartHandler{repo: repo}
+func NewStartHandler(repo service.UserRepository, scrapper service.ScrapperClient) *StartHandler {
+	return &StartHandler{repo: repo, scrapper: scrapper}
 }
 
 // Meta returns command metadata for Telegram registration.
@@ -46,6 +47,10 @@ func (h *StartHandler) Handle(ctx context.Context, cmd domain.Command) (domain.O
 
 		if err := h.repo.Save(ctx, newUser); err != nil {
 			return domain.OutgoingMessage{}, fmt.Errorf("failed to register new user: %w", err)
+		}
+
+		if err := h.scrapper.RegisterChat(ctx, cmd.ChatID); err != nil {
+			return domain.OutgoingMessage{}, fmt.Errorf("failed to register chat: %w", err)
 		}
 
 		return domain.OutgoingMessage{

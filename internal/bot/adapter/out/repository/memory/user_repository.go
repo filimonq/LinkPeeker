@@ -20,6 +20,7 @@ func NewUserRepository() *UserRepository {
 	}
 }
 
+// FindByID returns a user by ID.
 func (r *UserRepository) FindByID(_ context.Context, id user.ID) (*user.User, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -31,6 +32,7 @@ func (r *UserRepository) FindByID(_ context.Context, id user.ID) (*user.User, er
 	return u, nil
 }
 
+// Save stores a user.
 func (r *UserRepository) Save(_ context.Context, u *user.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

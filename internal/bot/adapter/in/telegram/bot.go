@@ -71,18 +71,28 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 
 func (b *Bot) parseCommand(msg *tgbotapi.Message) domain.Command {
 	cmdType := domain.CommandUnknown
+	var payload string
 
-	rawCmd := "/" + msg.Command()
-	switch domain.CommandType(rawCmd) {
-	case domain.CommandStart, domain.CommandHelp:
-		cmdType = domain.CommandType(rawCmd)
+	if msg.IsCommand() {
+		rawCmd := "/" + msg.Command()
+		payload = msg.CommandArguments()
+
+		switch domain.CommandType(rawCmd) {
+		case domain.CommandStart, domain.CommandHelp,
+			domain.CommandTrack, domain.CommandUntrack,
+			domain.CommandList, domain.CommandCancel:
+			cmdType = domain.CommandType(rawCmd)
+		}
+	} else {
+		cmdType = domain.CommandMessage
+		payload = msg.Text
 	}
 
 	return domain.Command{
 		Type:     cmdType,
-		Payload:  msg.CommandArguments(),
-		From:     user.ID(msg.From.ID),
+		Payload:  payload,
 		ChatID:   msg.Chat.ID,
+		From:     user.ID(msg.From.ID),
 		FromUser: msg.From.UserName,
 	}
 }
@@ -95,4 +105,9 @@ func (b *Bot) sendMessage(msg domain.OutgoingMessage) {
 			slog.String("error", err.Error()),
 		)
 	}
+}
+
+// Send implements service.MessageSender — sends a text message to a chat.
+func (b *Bot) Send(chatID int64, text string) {
+	b.sendMessage(domain.OutgoingMessage{ChatID: chatID, Text: text})
 }

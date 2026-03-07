@@ -10,6 +10,8 @@ import (
 // Config holds application configuration.
 type Config struct {
 	TelegramToken string
+	ScrapperURL   string
+	Port          string
 }
 
 // Load reads configuration from environment variables.
@@ -21,5 +23,19 @@ func Load() (*Config, error) {
 		return nil, errors.New("TELEGRAM_TOKEN is not set")
 	}
 
-	return &Config{TelegramToken: token}, nil
+	scrapperURL := os.Getenv("SCRAPPER_URL")
+	if scrapperURL == "" {
+		return nil, errors.New("SCRAPPER_URL is not set")
+	}
+
+	port := os.Getenv("BOT_PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	return &Config{
+		TelegramToken: token,
+		ScrapperURL:   scrapperURL,
+		Port:          port,
+	}, nil
 }

@@ -34,9 +34,20 @@ func (a *App) Run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	go func() {
+		a.logger.Info("http server starting", slog.String("port", a.cfg.Port))
+		if err := container.HTTPServer.Start(); err != nil {
+			a.logger.Error("http server error", slog.String("error", err.Error()))
+		}
+	}()
+
 	a.logger.Info("bot is starting")
 	container.Bot.Start(ctx)
 	a.logger.Info("bot stopped")
+
+	if err := container.HTTPServer.Shutdown(context.Background()); err != nil {
+		a.logger.Error("http server shutdown error", slog.String("error", err.Error()))
+	}
 
 	return nil
 }

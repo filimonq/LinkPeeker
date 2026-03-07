@@ -27,8 +27,16 @@ func (h *HelpHandler) CommandType() domain.CommandType {
 
 // Handle processes the /help command and returns available commands list.
 func (h *HelpHandler) Handle(_ context.Context, cmd domain.Command) (domain.OutgoingMessage, error) {
+	text := "Доступные команды:\n\n" +
+		"/start — зарегистрироваться в сервисе\n" +
+		"/help — показать это сообщение\n" +
+		"/track — начать отслеживание новой ссылки\n" +
+		"/untrack — прекратить отслеживание ссылки\n" +
+		"/list — показать список всех отслеживаемых ссылок\n" +
+		"/cancel — отменить текущее действие"
+
 	return domain.OutgoingMessage{
 		ChatID: cmd.ChatID,
-		Text:   "Доступные команды:\n/start - начать работу\n/help - вывести список доступных команд",
+		Text:   text,
 	}, nil
 }

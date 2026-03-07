@@ -10,7 +10,12 @@ type CommandType string
 const (
 	CommandStart   CommandType = "/start"
 	CommandHelp    CommandType = "/help"
+	CommandTrack   CommandType = "/track"
+	CommandUntrack CommandType = "/untrack"
+	CommandList    CommandType = "/list"
+	CommandCancel  CommandType = "/cancel"
 	CommandUnknown CommandType = "unknown"
+	CommandMessage CommandType = "message"
 )
 
 // Command represents a parsed incoming bot command.

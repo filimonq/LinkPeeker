@@ -12,10 +12,24 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
 )
 
+type mockScrapper struct{}
+
+func (m *mockScrapper) RegisterChat(_ context.Context, _ int64) error { return nil }
+func (m *mockScrapper) DeleteChat(_ context.Context, _ int64) error   { return nil }
+func (m *mockScrapper) AddLink(_ context.Context, _ int64, _ string, _ []string) (*service.LinkInfo, error) {
+	return &service.LinkInfo{}, nil
+}
+func (m *mockScrapper) RemoveLink(_ context.Context, _ int64, _ string) (*service.LinkInfo, error) {
+	return &service.LinkInfo{}, nil
+}
+func (m *mockScrapper) ListLinks(_ context.Context, _ int64) ([]*service.LinkInfo, error) {
+	return nil, nil
+}
+
 func newSvc() service.BotService {
 	userRepo := memory.NewUserRepository()
 	return service.NewBotService([]service.CommandHandler{
-		handlers.NewStartHandler(userRepo),
+		handlers.NewStartHandler(userRepo, &mockScrapper{}),
 		handlers.NewHelpHandler(),
 	})
 }
@@ -55,7 +69,7 @@ func TestBotService_Handle(t *testing.T) {
 func TestBotService_Start_ExistingUser(t *testing.T) {
 	userRepo := memory.NewUserRepository()
 	svc := service.NewBotService([]service.CommandHandler{
-		handlers.NewStartHandler(userRepo),
+		handlers.NewStartHandler(userRepo, &mockScrapper{}),
 	})
 
 	cmd := domain.Command{Type: domain.CommandStart, ChatID: 123, From: user.ID(99)}
