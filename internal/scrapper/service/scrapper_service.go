@@ -4,7 +4,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
+	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/chat"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
 )
@@ -23,25 +25,45 @@ type LinkRepository interface {
 	FindByChatID(ctx context.Context, chatID int64) ([]*link.Link, error)
 	FindAll(ctx context.Context) ([]*link.Link, error)
 	Exists(ctx context.Context, chatID int64, url string) (bool, error)
+	UpdateTime(ctx context.Context, id link.ID, updatedAt time.Time) error
 }
 
 // ScrapperService defines business operations for scrapper.
 type ScrapperService interface {
 	RegisterChat(ctx context.Context, chatID int64) error
 	DeleteChat(ctx context.Context, chatID int64) error
-	AddLink(ctx context.Context, chatID int64, url string, tags []string, filters []string) (*link.Link, error)
+	AddLink(ctx context.Context, chatID int64, url string, tags []string) (*link.Link, error)
 	RemoveLink(ctx context.Context, chatID int64, url string) (*link.Link, error)
 	ListLinks(ctx context.Context, chatID int64) ([]*link.Link, error)
+	CheckUpdates(ctx context.Context) error
+}
+
+// LinkChecker checks for updates at a given URL.
+type LinkChecker interface {
+	GetLastUpdated(ctx context.Context, url string) (time.Time, error)
+	Supports(url string) bool
+}
+
+// BotNotifier sends link updates to the bot.
+type BotNotifier interface {
+	SendUpdate(ctx context.Context, update pkgdomain.LinkUpdate) error
 }
 
 type scrapperService struct {
-	chats ChatRepository
-	links LinkRepository
+	chats    ChatRepository
+	links    LinkRepository
+	checkers []LinkChecker
+	notifier BotNotifier
 }
 
 // NewScrapperService creates a new ScrapperService.
-func NewScrapperService(chats ChatRepository, links LinkRepository) ScrapperService {
-	return &scrapperService{chats: chats, links: links}
+func NewScrapperService(chats ChatRepository, links LinkRepository, checkers []LinkChecker, notifier BotNotifier) ScrapperService {
+	return &scrapperService{
+		chats:    chats,
+		links:    links,
+		checkers: checkers,
+		notifier: notifier,
+	}
 }
 
 func (s *scrapperService) RegisterChat(ctx context.Context, chatID int64) error {
@@ -58,7 +80,7 @@ func (s *scrapperService) DeleteChat(ctx context.Context, chatID int64) error {
 	return nil
 }
 
-func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string, tags []string, filters []string) (*link.Link, error) {
+func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string, tags []string) (*link.Link, error) {
 	exists, err := s.chats.Exists(ctx, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("check chat: %w", err)
@@ -68,10 +90,9 @@ func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string,
 	}
 
 	l := &link.Link{
-		URL:     url,
-		ChatID:  chatID,
-		Tags:    tags,
-		Filters: filters,
+		URL:    url,
+		ChatID: chatID,
+		Tags:   tags,
 	}
 
 	if err := s.links.Add(ctx, l); err != nil {
@@ -110,4 +131,42 @@ func (s *scrapperService) ListLinks(ctx context.Context, chatID int64) ([]*link.
 		return nil, fmt.Errorf("list links: %w", err)
 	}
 	return links, nil
+}
+
+func (s *scrapperService) CheckUpdates(ctx context.Context) error {
+	links, err := s.links.FindAll(ctx)
+	if err != nil {
+		return fmt.Errorf("find all links: %w", err)
+	}
+
+	for _, l := range links {
+		checker := s.findChecker(l.URL)
+		if checker == nil {
+			continue
+		}
+
+		updatedAt, err := checker.GetLastUpdated(ctx, l.URL)
+		if err != nil {
+			continue
+		}
+
+		if updatedAt.After(l.UpdatedAt) {
+			_ = s.notifier.SendUpdate(ctx, pkgdomain.LinkUpdate{
+				ID:        int64(l.ID),
+				URL:       l.URL,
+				TgChatIDs: []int64{l.ChatID},
+			})
+			_ = s.links.UpdateTime(ctx, l.ID, updatedAt)
+		}
+	}
+	return nil
+}
+
+func (s *scrapperService) findChecker(url string) LinkChecker {
+	for _, c := range s.checkers {
+		if c.Supports(url) {
+			return c
+		}
+	}
+	return nil
 }

@@ -11,7 +11,6 @@ type Link struct {
 	ID        ID
 	URL       string
 	Tags      []string
-	Filters   []string
 	ChatID    int64
 	CreatedAt time.Time
 	UpdatedAt time.Time

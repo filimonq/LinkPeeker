@@ -8,19 +8,19 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
 )
 
-type userRepository struct {
+type UserRepository struct {
 	mu    sync.RWMutex
 	users map[user.ID]*user.User
 }
 
 // NewUserRepository creates a new in-memory user repository.
-func NewUserRepository() *userRepository {
-	return &userRepository{
+func NewUserRepository() *UserRepository {
+	return &UserRepository{
 		users: make(map[user.ID]*user.User),
 	}
 }
 
-func (r *userRepository) FindByID(_ context.Context, id user.ID) (*user.User, error) {
+func (r *UserRepository) FindByID(_ context.Context, id user.ID) (*user.User, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -31,7 +31,7 @@ func (r *userRepository) FindByID(_ context.Context, id user.ID) (*user.User, er
 	return u, nil
 }
 
-func (r *userRepository) Save(_ context.Context, u *user.User) error {
+func (r *UserRepository) Save(_ context.Context, u *user.User) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
