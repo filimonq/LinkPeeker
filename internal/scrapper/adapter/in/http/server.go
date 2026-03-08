@@ -39,3 +39,7 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
+
+func (s *Server) Handler() http.Handler {
+	return s.server.Handler
+}

@@ -26,6 +26,14 @@ func NewClient() *Client {
 	}
 }
 
+// NewClientWithBaseURL creates a client with custom base URL for testing.
+func NewClientWithBaseURL(baseURL string) *Client {
+	return &Client{
+		http:    &http.Client{Timeout: defaultTimeout},
+		baseURL: baseURL,
+	}
+}
+
 type soResponse struct {
 	Items []struct {
 		LastActivityDate int64 `json:"last_activity_date"`

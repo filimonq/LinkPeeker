@@ -28,6 +28,15 @@ func NewClient(token string) *Client {
 	}
 }
 
+// NewClientWithBaseURL creates a client with custom base URL for testing.
+func NewClientWithBaseURL(token, baseURL string) *Client {
+	return &Client{
+		http:    &http.Client{Timeout: defaultTimeout},
+		baseURL: baseURL,
+		token:   token,
+	}
+}
+
 type repoResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
