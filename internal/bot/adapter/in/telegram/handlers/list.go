@@ -14,18 +14,22 @@ type ListHandler struct {
 	scrapper service.ScrapperClient
 }
 
+// NewListHandler creates a new ListHandler.
 func NewListHandler(scrapper service.ScrapperClient) *ListHandler {
 	return &ListHandler{scrapper: scrapper}
 }
 
+// Meta returns command metadata.
 func (h *ListHandler) Meta() domain.CommandMeta {
 	return domain.CommandMeta{Name: "list", Description: "Показать список отслеживаемых ссылок"}
 }
 
+// CommandType returns the command type.
 func (h *ListHandler) CommandType() domain.CommandType {
 	return domain.CommandList
 }
 
+// Handle processes the /list command.
 func (h *ListHandler) Handle(ctx context.Context, cmd domain.Command) (domain.OutgoingMessage, error) {
 	links, err := h.scrapper.ListLinks(ctx, cmd.ChatID)
 	if err != nil {

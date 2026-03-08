@@ -9,9 +9,10 @@ import (
 
 // Config holds application configuration.
 type Config struct {
-	TelegramToken string
-	ScrapperURL   string
-	Port          string
+	TelegramToken  string
+	ScrapperURL    string
+	Port           string
+	TelegramAPIURL string // для test containers
 }
 
 // Load reads configuration from environment variables.
@@ -34,8 +35,9 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		TelegramToken: token,
-		ScrapperURL:   scrapperURL,
-		Port:          port,
+		TelegramToken:  token,
+		ScrapperURL:    scrapperURL,
+		Port:           port,
+		TelegramAPIURL: os.Getenv("TELEGRAM_API_URL"),
 	}, nil
 }

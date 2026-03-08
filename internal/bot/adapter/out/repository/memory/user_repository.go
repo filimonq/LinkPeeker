@@ -8,6 +8,7 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
 )
 
+// UserRepository is an in-memory implementation of user repository.
 type UserRepository struct {
 	mu    sync.RWMutex
 	users map[user.ID]*user.User

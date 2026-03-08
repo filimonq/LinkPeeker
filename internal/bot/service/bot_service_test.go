@@ -146,12 +146,12 @@ func TestTrack_DuplicateURL_ReturnsAlreadyExists(t *testing.T) {
 	ctx := context.Background()
 	chatID := int64(1)
 
-	svc.HandleCommand(ctx, domain.Command{Type: domain.CommandTrack, ChatID: chatID})
-	svc.HandleCommand(ctx, domain.Command{Type: domain.CommandMessage, ChatID: chatID, Payload: "https://github.com/user/repo"})
-	svc.HandleCommand(ctx, domain.Command{Type: domain.CommandMessage, ChatID: chatID, Payload: "go"})
+	_, _ = svc.HandleCommand(ctx, domain.Command{Type: domain.CommandTrack, ChatID: chatID})
+	_, _ = svc.HandleCommand(ctx, domain.Command{Type: domain.CommandMessage, ChatID: chatID, Payload: "https://github.com/user/repo"})
+	_, _ = svc.HandleCommand(ctx, domain.Command{Type: domain.CommandMessage, ChatID: chatID, Payload: "go"})
 
-	svc.HandleCommand(ctx, domain.Command{Type: domain.CommandTrack, ChatID: chatID})
-	svc.HandleCommand(ctx, domain.Command{Type: domain.CommandMessage, ChatID: chatID, Payload: "https://github.com/user/repo"})
+	_, _ = svc.HandleCommand(ctx, domain.Command{Type: domain.CommandTrack, ChatID: chatID})
+	_, _ = svc.HandleCommand(ctx, domain.Command{Type: domain.CommandMessage, ChatID: chatID, Payload: "https://github.com/user/repo"})
 	resp, err := svc.HandleCommand(ctx, domain.Command{Type: domain.CommandMessage, ChatID: chatID, Payload: "go"})
 	require.NoError(t, err)
 	assert.Contains(t, resp.Text, "уже отслеживается")

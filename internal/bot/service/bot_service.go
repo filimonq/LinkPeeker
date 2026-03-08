@@ -1,3 +1,4 @@
+// Package service содержит бизнес-логику бота.
 package service
 
 import (

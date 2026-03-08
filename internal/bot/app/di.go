@@ -25,7 +25,15 @@ type Container struct {
 
 // NewContainer builds and wires all dependencies.
 func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
-	tgClient, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
+	var (
+		tgClient *tgbotapi.BotAPI
+		err      error
+	)
+	if cfg.TelegramAPIURL != "" {
+		tgClient, err = tgbotapi.NewBotAPIWithAPIEndpoint(cfg.TelegramToken, cfg.TelegramAPIURL+"/bot%s/%s")
+	} else {
+		tgClient, err = tgbotapi.NewBotAPI(cfg.TelegramToken)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("create tg client: %w", err)
 	}

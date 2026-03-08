@@ -40,6 +40,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
+// Handler returns the underlying http.Handler for testing.
 func (s *Server) Handler() http.Handler {
 	return s.server.Handler
 }

@@ -33,7 +33,7 @@ func post(t *testing.T, srv *httptest.Server, path string, body string, chatID i
 	if chatID != 0 {
 		req.Header.Set("Tg-Chat-Id", fmt.Sprintf("%d", chatID))
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec
 	require.NoError(t, err)
 	return resp
 }
@@ -45,7 +45,7 @@ func del(t *testing.T, srv *httptest.Server, path string, body string, chatID in
 	if chatID != 0 {
 		req.Header.Set("Tg-Chat-Id", fmt.Sprintf("%d", chatID))
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec
 	require.NoError(t, err)
 	return resp
 }
@@ -56,7 +56,7 @@ func get(t *testing.T, srv *httptest.Server, path string, chatID int64) *http.Re
 	if chatID != 0 {
 		req.Header.Set("Tg-Chat-Id", fmt.Sprintf("%d", chatID))
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec
 	require.NoError(t, err)
 	return resp
 }

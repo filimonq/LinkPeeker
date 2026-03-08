@@ -13,7 +13,7 @@ import (
 )
 
 func TestGitHubClient_NonOKStatus_ReturnsError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
@@ -29,7 +29,7 @@ func TestGitHubClient_NonOKStatus_ReturnsError(t *testing.T) {
 }
 
 func TestGitHubClient_InvalidBody_ReturnsError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`not json`))
 	}))
