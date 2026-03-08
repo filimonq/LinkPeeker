@@ -48,7 +48,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		handlers.NewMessageHandler(scrapperClient, storage),
 	}
 
-	svc := service.NewBotService(handlerList)
+	svc := service.NewBotService(handlerList, storage)
 
 	var metas []domain.CommandMeta
 	for _, h := range handlerList {

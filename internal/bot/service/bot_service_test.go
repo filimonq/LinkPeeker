@@ -10,6 +10,7 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service/state"
 )
 
 type mockScrapper struct{}
@@ -31,7 +32,7 @@ func newSvc() service.BotService {
 	return service.NewBotService([]service.CommandHandler{
 		handlers.NewStartHandler(userRepo, &mockScrapper{}),
 		handlers.NewHelpHandler(),
-	})
+	}, state.NewStorage())
 }
 
 func TestBotService_Handle(t *testing.T) {
@@ -70,7 +71,7 @@ func TestBotService_Start_ExistingUser(t *testing.T) {
 	userRepo := memory.NewUserRepository()
 	svc := service.NewBotService([]service.CommandHandler{
 		handlers.NewStartHandler(userRepo, &mockScrapper{}),
-	})
+	}, state.NewStorage())
 
 	cmd := domain.Command{Type: domain.CommandStart, ChatID: 123, From: user.ID(99)}
 

@@ -22,6 +22,10 @@ func NewHandler(updateSvc service.UpdateService, logger *slog.Logger) *Handler {
 
 func (h *Handler) handleUpdates(w http.ResponseWriter, r *http.Request) {
 	var req LinkUpdateRequest
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)

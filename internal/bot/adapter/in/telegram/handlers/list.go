@@ -35,6 +35,21 @@ func (h *ListHandler) Handle(ctx context.Context, cmd domain.Command) (domain.Ou
 		}, nil
 	}
 
+	tag := strings.TrimSpace(cmd.Payload)
+
+	if tag != "" {
+		filtered := make([]*service.LinkInfo, 0)
+		for _, l := range links {
+			for _, t := range l.Tags {
+				if t == tag {
+					filtered = append(filtered, l)
+					break
+				}
+			}
+		}
+		links = filtered
+	}
+
 	if len(links) == 0 {
 		return domain.OutgoingMessage{
 			ChatID: cmd.ChatID,
@@ -52,8 +67,5 @@ func (h *ListHandler) Handle(ctx context.Context, cmd domain.Command) (domain.Ou
 		sb.WriteString("\n")
 	}
 
-	return domain.OutgoingMessage{
-		ChatID: cmd.ChatID,
-		Text:   sb.String(),
-	}, nil
+	return domain.OutgoingMessage{ChatID: cmd.ChatID, Text: sb.String()}, nil
 }

@@ -66,6 +66,9 @@ func (c *Client) RegisterChat(ctx context.Context, chatID int64) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusConflict {
+		return nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("scrapper status: %d", resp.StatusCode)
 	}

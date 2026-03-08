@@ -3,8 +3,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os/signal"
 	"syscall"
 )
@@ -37,7 +39,9 @@ func (a *App) Run() error {
 	go func() {
 		a.logger.Info("http server starting", slog.String("port", a.cfg.Port))
 		if err := container.HTTPServer.Start(); err != nil {
-			a.logger.Error("http server error", slog.String("error", err.Error()))
+			if !errors.Is(err, http.ErrServerClosed) {
+				a.logger.Error("http server error", slog.String("error", err.Error()))
+			}
 		}
 	}()
 

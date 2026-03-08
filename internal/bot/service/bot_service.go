@@ -6,6 +6,7 @@ import (
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service/state"
 )
 
 // UserRepository defines storage operations for users.
@@ -53,18 +54,23 @@ var ErrChatNotFound = errors.New("chat not found")
 
 type botService struct {
 	handlers map[domain.CommandType]CommandHandler
+	storage  *state.Storage
 }
 
 // NewBotService creates a new BotService with provided handlers.
-func NewBotService(hList []CommandHandler) BotService {
+func NewBotService(hList []CommandHandler, storage *state.Storage) BotService {
 	hMap := make(map[domain.CommandType]CommandHandler)
 	for _, h := range hList {
 		hMap[h.CommandType()] = h
 	}
-	return &botService{handlers: hMap}
+	return &botService{handlers: hMap, storage: storage}
 }
 
 func (s *botService) HandleCommand(ctx context.Context, cmd domain.Command) (domain.OutgoingMessage, error) {
+	if cmd.Type != domain.CommandMessage {
+		s.storage.Reset(cmd.ChatID)
+	}
+
 	handler, ok := s.handlers[cmd.Type]
 	if !ok {
 		return domain.OutgoingMessage{
@@ -72,6 +78,5 @@ func (s *botService) HandleCommand(ctx context.Context, cmd domain.Command) (dom
 			Text:   "Неизвестная команда. Воспользуйтесь /help.",
 		}, nil
 	}
-
 	return handler.Handle(ctx, cmd)
 }

@@ -58,7 +58,9 @@ func (h *StartHandler) Handle(ctx context.Context, cmd domain.Command) (domain.O
 			Text:   "Добро пожаловать!",
 		}, nil
 	}
-
+	if err := h.scrapper.RegisterChat(ctx, cmd.ChatID); err != nil {
+		return domain.OutgoingMessage{}, fmt.Errorf("failed to register chat: %w", err)
+	}
 	return domain.OutgoingMessage{
 		ChatID: cmd.ChatID,
 		Text:   "С возвращением!",

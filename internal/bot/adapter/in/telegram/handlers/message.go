@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	neturl "net/url"
 	"strings"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
@@ -52,6 +53,14 @@ func (h *MessageHandler) handleTrackURL(cmd domain.Command) (domain.OutgoingMess
 			Text:   "Ссылка не может быть пустой. Попробуй ещё раз или /cancel",
 		}, nil
 	}
+
+	if _, err := neturl.ParseRequestURI(url); err != nil || (!strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://")) {
+		return domain.OutgoingMessage{
+			ChatID: cmd.ChatID,
+			Text:   "Некорректная ссылка. Ожидается http:// или https://. Попробуй ещё раз или /cancel",
+		}, nil
+	}
+
 	h.storage.SetURL(cmd.ChatID, url)
 	h.storage.Set(cmd.ChatID, state.WaitingTags)
 	return domain.OutgoingMessage{
