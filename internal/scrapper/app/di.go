@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	scrappergrpc "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/in/grpc"
 	httphandler "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/in/http"
 	botclient "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/bot"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/github"
@@ -15,8 +16,9 @@ import (
 
 // Container holds all scrapper dependencies.
 type Container struct {
-	Server    *httphandler.Server
-	Scheduler *scheduler.Scheduler
+	Server     *httphandler.Server
+	GRPCServer *scrappergrpc.Server
+	Scheduler  *scheduler.Scheduler
 }
 
 // NewContainer builds and wires all dependencies.
@@ -44,8 +46,10 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		return nil, fmt.Errorf("create scheduler: %w", err)
 	}
 
+	grpcServer := scrappergrpc.NewServer(svc)
 	return &Container{
-		Server:    server,
-		Scheduler: sched,
+		Server:     server,
+		GRPCServer: grpcServer,
+		Scheduler:  sched,
 	}, nil
 }

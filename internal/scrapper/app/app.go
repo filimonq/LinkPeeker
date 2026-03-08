@@ -35,14 +35,22 @@ func (a *App) Run() error {
 	defer cancel()
 
 	go func() {
-		a.logger.Info("scrapper is starting", slog.String("port", a.cfg.Port))
+		a.logger.Info("scrapper http starting", slog.String("port", a.cfg.Port))
 		if err := container.Server.Start(); err != nil {
 			a.logger.Error("server error", slog.String("error", err.Error()))
 		}
 	}()
 
+	go func() {
+		a.logger.Info("scrapper grpc starting", slog.String("port", a.cfg.GRPCPort))
+		if err := container.GRPCServer.Start(":" + a.cfg.GRPCPort); err != nil {
+			a.logger.Error("grpc server error", slog.String("error", err.Error()))
+		}
+	}()
+
 	<-ctx.Done()
 	a.logger.Info("scrapper is shutting down")
+	container.GRPCServer.Stop()
 
 	if err := container.Scheduler.Stop(); err != nil {
 		a.logger.Error("scheduler stop error", slog.String("error", err.Error()))

@@ -14,6 +14,7 @@ type Config struct {
 	BotURL           string
 	GitHubToken      string
 	Port             string
+	GRPCPort         string
 	ScheduleInterval time.Duration
 }
 
@@ -31,6 +32,11 @@ func Load() (*Config, error) {
 		port = "8081"
 	}
 
+	grpcPort := os.Getenv("SCRAPPER_GRPC_PORT")
+	if grpcPort == "" {
+		grpcPort = "50051"
+	}
+
 	intervalStr := os.Getenv("SCHEDULE_INTERVAL_SECONDS")
 	interval := time.Minute
 
@@ -45,6 +51,7 @@ func Load() (*Config, error) {
 		BotURL:           botURL,
 		GitHubToken:      os.Getenv("GITHUB_TOKEN"),
 		Port:             port,
+		GRPCPort:         grpcPort,
 		ScheduleInterval: interval,
 	}, nil
 }

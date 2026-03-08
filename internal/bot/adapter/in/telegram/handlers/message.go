@@ -65,7 +65,7 @@ func (h *MessageHandler) handleTrackURL(cmd domain.Command) (domain.OutgoingMess
 	h.storage.Set(cmd.ChatID, state.WaitingTags)
 	return domain.OutgoingMessage{
 		ChatID: cmd.ChatID,
-		Text:   "Пришли теги через запятую или /cancel чтобы пропустить:",
+		Text:   "Пришли теги через запятую:",
 	}, nil
 }
 
