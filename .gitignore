@@ -1,3 +1,2 @@
 .env
 coverage.out
-integration_test.go
