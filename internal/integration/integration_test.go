@@ -1,0 +1,209 @@
+package integration_test
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"math/rand"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	dockernetwork "github.com/docker/docker/api/types/network"
+	"github.com/stretchr/testify/suite"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/network"
+	"github.com/testcontainers/testcontainers-go/wait"
+)
+
+type E2ESuite struct {
+	suite.Suite
+
+	ctx         context.Context
+	cancel      context.CancelFunc
+	client      *http.Client
+	scrapperURL string
+	botURL      string
+}
+
+func (s *E2ESuite) SetupSuite() {
+	s.ctx, s.cancel = context.WithTimeout(context.Background(), 2*time.Minute)
+	s.client = &http.Client{Timeout: 5 * time.Second}
+
+	mockPort := s.startTgMock()
+	dockerNet, gateway := s.startDockerNetwork()
+	s.scrapperURL = s.startScrapper(dockerNet.Name)
+	s.botURL = s.startBot(dockerNet.Name, gateway, mockPort)
+}
+
+func (s *E2ESuite) TearDownSuite() {
+	s.cancel()
+}
+
+func (s *E2ESuite) startTgMock() string {
+	l, err := net.Listen("tcp", "0.0.0.0:0") //nolint:gosec // G102: намеренно, нужен для Docker
+	s.Require().NoError(err)
+
+	tgMock := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/getMe"):
+			_, _ = fmt.Fprintln(w, `{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"Test","username":"test_bot"}}`)
+		case strings.HasSuffix(r.URL.Path, "/getUpdates"):
+			_, _ = fmt.Fprintln(w, `{"ok":true,"result":[]}`)
+		default:
+			_, _ = fmt.Fprintln(w, `{"ok":true,"result":{}}`)
+		}
+	}))
+	tgMock.Listener = l
+	tgMock.Start()
+	s.T().Cleanup(tgMock.Close)
+
+	_, port, err := net.SplitHostPort(tgMock.Listener.Addr().String())
+	s.Require().NoError(err)
+
+	return port
+}
+
+func (s *E2ESuite) startDockerNetwork() (*testcontainers.DockerNetwork, string) {
+	// уникальная подсеть на каждый запуск чтобы не конфликтовать с предыдущими, локально у меня
+	// create network: Error response from daemon: invalid pool request: Pool overlaps with other one on this address space: failed to create network
+	// но так кеша нет, зато работает
+	second := rand.Intn(200) + 10 //nolint:gosec
+	third := rand.Intn(200) + 10  //nolint:gosec
+	subnet := fmt.Sprintf("10.%d.%d.0/24", second, third)
+	gateway := fmt.Sprintf("10.%d.%d.1", second, third)
+
+	dockerNet, err := network.New(s.ctx,
+		network.WithIPAM(&dockernetwork.IPAM{
+			Config: []dockernetwork.IPAMConfig{
+				{Subnet: subnet, Gateway: gateway},
+			},
+		}),
+	)
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = dockerNet.Remove(s.ctx) })
+
+	return dockerNet, gateway
+}
+
+func (s *E2ESuite) startScrapper(netName string) string {
+	c, err := testcontainers.GenericContainer(s.ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			FromDockerfile: testcontainers.FromDockerfile{
+				Context:    "../../",
+				Dockerfile: "build/scrapper/Dockerfile",
+			},
+			ExposedPorts:   []string{"8081/tcp"},
+			Networks:       []string{netName},
+			NetworkAliases: map[string][]string{netName: {"scrapper"}},
+			Env: map[string]string{
+				"BOT_URL":                   "http://bot:8080",
+				"SCRAPPER_PORT":             "8081",
+				"SCRAPPER_GRPC_PORT":        "50051",
+				"SCHEDULE_INTERVAL_SECONDS": "3600",
+			},
+			WaitingFor: wait.ForListeningPort("8081/tcp").WithStartupTimeout(30 * time.Second),
+		},
+		Started: true,
+	})
+	if err != nil {
+		s.printLogs(c)
+		s.Require().NoError(err)
+	}
+	s.T().Cleanup(func() { _ = c.Terminate(s.ctx) })
+
+	host, _ := c.Host(s.ctx)
+	port, _ := c.MappedPort(s.ctx, "8081")
+
+	return fmt.Sprintf("http://%s:%s", host, port.Port())
+}
+
+func (s *E2ESuite) startBot(netName, gateway, mockPort string) string {
+	c, err := testcontainers.GenericContainer(s.ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			FromDockerfile: testcontainers.FromDockerfile{
+				Context:    "../../",
+				Dockerfile: "build/bot/Dockerfile",
+			},
+			ExposedPorts:   []string{"8080/tcp"},
+			Networks:       []string{netName},
+			NetworkAliases: map[string][]string{netName: {"bot"}},
+			Env: map[string]string{
+				"TELEGRAM_TOKEN":   "fake-token",
+				"TELEGRAM_API_URL": "http://" + gateway + ":" + mockPort,
+				"SCRAPPER_URL":     "scrapper:50051",
+				"BOT_PORT":         "8080",
+			},
+			WaitingFor: wait.ForListeningPort("8080/tcp").WithStartupTimeout(30 * time.Second),
+		},
+		Started: true,
+	})
+	if err != nil {
+		s.printLogs(c)
+		s.Require().NoError(err)
+	}
+	s.T().Cleanup(func() { _ = c.Terminate(s.ctx) })
+
+	host, _ := c.Host(s.ctx)
+	port, _ := c.MappedPort(s.ctx, "8080")
+
+	return fmt.Sprintf("http://%s:%s", host, port.Port())
+}
+
+func (s *E2ESuite) printLogs(c testcontainers.Container) {
+	logs, err := c.Logs(s.ctx)
+	if err != nil {
+		s.T().Logf("failed to get logs: %v", err)
+		return
+	}
+	defer func() { _ = logs.Close() }()
+	buf := new(bytes.Buffer)
+	_, _ = buf.ReadFrom(logs)
+	s.T().Logf("container logs:\n%s", buf.String())
+}
+
+func (s *E2ESuite) TestScrapper_RegisterAndAddLink() {
+	req, _ := http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/tg-chat/1", nil)
+	resp, err := s.client.Do(req) //nolint:gosec
+	s.Require().NoError(err)
+	_ = resp.Body.Close()
+	s.Equal(http.StatusOK, resp.StatusCode)
+
+	body := `{"link":"https://github.com/golang/go","tags":["go"]}`
+	req, _ = http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/links",
+		bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Tg-Chat-Id", "1")
+	resp, err = s.client.Do(req) //nolint:gosec
+	s.Require().NoError(err)
+	_ = resp.Body.Close()
+	s.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func (s *E2ESuite) TestBot_ReceivesUpdate() {
+	body := `{"id":1,"url":"https://github.com/golang/go","description":"update","tgChatIds":[1]}`
+	req, _ := http.NewRequestWithContext(s.ctx, http.MethodPost, s.botURL+"/updates",
+		bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.client.Do(req) //nolint:gosec
+	s.Require().NoError(err)
+	defer func() { _ = resp.Body.Close() }()
+	s.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func (s *E2ESuite) TestScrapper_DeleteUnknownChat() {
+	req, _ := http.NewRequestWithContext(s.ctx, http.MethodDelete, s.scrapperURL+"/tg-chat/999", nil)
+	resp, err := s.client.Do(req) //nolint:gosec
+	s.Require().NoError(err)
+	defer func() { _ = resp.Body.Close() }()
+	s.Equal(http.StatusNotFound, resp.StatusCode)
+}
+
+func TestE2E(t *testing.T) {
+	t.Parallel()
+	suite.Run(t, new(E2ESuite))
+}
