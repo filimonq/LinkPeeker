@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
@@ -151,12 +152,18 @@ func (s *scrapperService) CheckUpdates(ctx context.Context) error {
 		}
 
 		if updatedAt.After(l.UpdatedAt) {
-			_ = s.notifier.SendUpdate(ctx, pkgdomain.LinkUpdate{
+			if err := s.notifier.SendUpdate(ctx, pkgdomain.LinkUpdate{
 				ID:        int64(l.ID),
 				URL:       l.URL,
 				TgChatIDs: []int64{l.ChatID},
-			})
-			_ = s.links.UpdateTime(ctx, l.ID, updatedAt)
+			}); err != nil {
+				slog.Error("send update", "url", l.URL, "err", err)
+				continue
+			}
+
+			if err := s.links.UpdateTime(ctx, l.ID, updatedAt); err != nil {
+				slog.Error("update time", "url", l.URL, "err", err)
+			}
 		}
 	}
 	return nil
