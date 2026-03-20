@@ -20,3 +20,4 @@ func main() {
 		logger.Error("scrapper terminated with error", "err", err)
 		os.Exit(1)
 	}
+}
