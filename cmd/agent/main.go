@@ -1,2 +1,5 @@
-// Package agent is the entry point for the agent service.
-package agent
+package main
+
+func main() {
+	// TODO
+}

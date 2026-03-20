@@ -1,4 +1,3 @@
-// Package main is the entry point for the scrapper service.
 package main
 
 import (
@@ -21,4 +20,3 @@ func main() {
 		logger.Error("scrapper terminated with error", "err", err)
 		os.Exit(1)
 	}
-}

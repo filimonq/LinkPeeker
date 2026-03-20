@@ -22,4 +22,3 @@ func main() {
 		logger.Error("app terminated with error", "err", err)
 		os.Exit(1)
 	}
-}
