@@ -96,7 +96,7 @@ func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string,
 		Tags:   tags,
 	}
 
-	if err := s.links.Add(ctx, l); err != nil {
+	if err = s.links.Add(ctx, l); err != nil {
 		return nil, fmt.Errorf("add link: %w", err)
 	}
 	return l, nil
@@ -146,13 +146,14 @@ func (s *scrapperService) CheckUpdates(ctx context.Context) error {
 			continue
 		}
 
-		updatedAt, err := checker.GetLastUpdated(ctx, l.URL)
-		if err != nil {
+		updatedAt, checkErr := checker.GetLastUpdated(ctx, l.URL)
+		if checkErr != nil {
+			slog.Error("get last updated", "url", l.URL, "err", checkErr)
 			continue
 		}
 
 		if updatedAt.After(l.UpdatedAt) {
-			if err := s.notifier.SendUpdate(ctx, pkgdomain.LinkUpdate{
+			if err = s.notifier.SendUpdate(ctx, pkgdomain.LinkUpdate{
 				ID:        int64(l.ID),
 				URL:       l.URL,
 				TgChatIDs: []int64{l.ChatID},
@@ -161,7 +162,7 @@ func (s *scrapperService) CheckUpdates(ctx context.Context) error {
 				continue
 			}
 
-			if err := s.links.UpdateTime(ctx, l.ID, updatedAt); err != nil {
+			if err = s.links.UpdateTime(ctx, l.ID, updatedAt); err != nil {
 				slog.Error("update time", "url", l.URL, "err", err)
 			}
 		}

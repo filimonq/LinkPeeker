@@ -29,7 +29,7 @@ func (a *App) Run() error {
 		return fmt.Errorf("build container: %w", err)
 	}
 
-	if err := container.Registry.Register(context.Background(), container.Metas); err != nil {
+	if err = container.Registry.Register(context.Background(), container.Metas); err != nil {
 		a.logger.Warn("failed to register commands", slog.String("error", err.Error()))
 	}
 
@@ -38,7 +38,7 @@ func (a *App) Run() error {
 
 	go func() {
 		a.logger.Info("http server starting", slog.String("port", a.cfg.Port))
-		if err := container.HTTPServer.Start(); err != nil {
+		if err = container.HTTPServer.Start(); err != nil {
 			if !errors.Is(err, http.ErrServerClosed) {
 				a.logger.Error("http server error", slog.String("error", err.Error()))
 			}
@@ -49,7 +49,7 @@ func (a *App) Run() error {
 	container.Bot.Start(ctx)
 	a.logger.Info("bot stopped")
 
-	if err := container.HTTPServer.Shutdown(context.Background()); err != nil {
+	if err = container.HTTPServer.Shutdown(context.Background()); err != nil {
 		a.logger.Error("http server shutdown error", slog.String("error", err.Error()))
 	}
 

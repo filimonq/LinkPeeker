@@ -55,5 +55,8 @@ func (s *Scheduler) Start() error {
 
 // Stop stops the scheduler.
 func (s *Scheduler) Stop() error {
-	return s.scheduler.Shutdown()
+	if err := s.scheduler.Shutdown(); err != nil {
+		return fmt.Errorf("scheduler shutdown: %w", err)
+	}
+	return nil
 }

@@ -18,7 +18,7 @@ func main() {
 	}
 
 	application := app.New(logger, cfg)
-	if err := application.Run(); err != nil {
+	if err = application.Run(); err != nil {
 		logger.Error("app terminated with error", "err", err)
 		os.Exit(1)
 	}

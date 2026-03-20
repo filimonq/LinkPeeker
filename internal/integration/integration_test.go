@@ -43,8 +43,45 @@ func (s *E2ESuite) TearDownSuite() {
 	s.cancel()
 }
 
+func (s *E2ESuite) TestScrapper_RegisterAndAddLink() {
+	req, _ := http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/tg-chat/1", nil)
+	resp, err := s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	_ = resp.Body.Close()
+	s.Equal(http.StatusOK, resp.StatusCode)
+
+	body := `{"link":"https://github.com/golang/go","tags":["go"]}`
+	req, _ = http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/links",
+		bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Tg-Chat-Id", "1")
+	resp, err = s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	_ = resp.Body.Close()
+	s.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func (s *E2ESuite) TestBot_ReceivesUpdate() {
+	body := `{"id":1,"url":"https://github.com/golang/go","description":"update","tgChatIds":[1]}`
+	req, _ := http.NewRequestWithContext(s.ctx, http.MethodPost, s.botURL+"/updates",
+		bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	defer func() { _ = resp.Body.Close() }()
+	s.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func (s *E2ESuite) TestScrapper_DeleteUnknownChat() {
+	req, _ := http.NewRequestWithContext(s.ctx, http.MethodDelete, s.scrapperURL+"/tg-chat/999", nil)
+	resp, err := s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	defer func() { _ = resp.Body.Close() }()
+	s.Equal(http.StatusNotFound, resp.StatusCode)
+}
+
 func (s *E2ESuite) startTgMock() string {
-	l, err := net.Listen("tcp", "0.0.0.0:0") //nolint:gosec // G102: намеренно, нужен для Docker
+	l, err := net.Listen("tcp", "0.0.0.0:0") //nolint:gosec // G102: needed for Docker accessibility
 	s.Require().NoError(err)
 
 	tgMock := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,11 +106,8 @@ func (s *E2ESuite) startTgMock() string {
 }
 
 func (s *E2ESuite) startDockerNetwork() (*testcontainers.DockerNetwork, string) {
-	// уникальная подсеть на каждый запуск чтобы не конфликтовать с предыдущими, локально у меня
-	// create network: Error response from daemon: invalid pool request: Pool overlaps with other one on this address space: failed to create network
-	// но так кеша нет, зато работает
-	second := rand.Intn(200) + 10 //nolint:gosec
-	third := rand.Intn(200) + 10  //nolint:gosec
+	second := rand.Intn(200) + 10 //nolint:gosec // insecure random is fine for subnet generation
+	third := rand.Intn(200) + 10  //nolint:gosec // insecure random is fine for subnet generation
 	subnet := fmt.Sprintf("10.%d.%d.0/24", second, third)
 	gateway := fmt.Sprintf("10.%d.%d.1", second, third)
 
@@ -111,7 +145,9 @@ func (s *E2ESuite) startScrapper(netName string) string {
 		Started: true,
 	})
 	if err != nil {
-		s.printLogs(c)
+		if c != nil {
+			s.printLogs(c)
+		}
 		s.Require().NoError(err)
 	}
 	s.T().Cleanup(func() { _ = c.Terminate(s.ctx) })
@@ -143,7 +179,9 @@ func (s *E2ESuite) startBot(netName, gateway, mockPort string) string {
 		Started: true,
 	})
 	if err != nil {
-		s.printLogs(c)
+		if c != nil {
+			s.printLogs(c)
+		}
 		s.Require().NoError(err)
 	}
 	s.T().Cleanup(func() { _ = c.Terminate(s.ctx) })
@@ -155,6 +193,9 @@ func (s *E2ESuite) startBot(netName, gateway, mockPort string) string {
 }
 
 func (s *E2ESuite) printLogs(c testcontainers.Container) {
+	if c == nil {
+		return
+	}
 	logs, err := c.Logs(s.ctx)
 	if err != nil {
 		s.T().Logf("failed to get logs: %v", err)
@@ -164,43 +205,6 @@ func (s *E2ESuite) printLogs(c testcontainers.Container) {
 	buf := new(bytes.Buffer)
 	_, _ = buf.ReadFrom(logs)
 	s.T().Logf("container logs:\n%s", buf.String())
-}
-
-func (s *E2ESuite) TestScrapper_RegisterAndAddLink() {
-	req, _ := http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/tg-chat/1", nil)
-	resp, err := s.client.Do(req) //nolint:gosec
-	s.Require().NoError(err)
-	_ = resp.Body.Close()
-	s.Equal(http.StatusOK, resp.StatusCode)
-
-	body := `{"link":"https://github.com/golang/go","tags":["go"]}`
-	req, _ = http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/links",
-		bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Tg-Chat-Id", "1")
-	resp, err = s.client.Do(req) //nolint:gosec
-	s.Require().NoError(err)
-	_ = resp.Body.Close()
-	s.Equal(http.StatusOK, resp.StatusCode)
-}
-
-func (s *E2ESuite) TestBot_ReceivesUpdate() {
-	body := `{"id":1,"url":"https://github.com/golang/go","description":"update","tgChatIds":[1]}`
-	req, _ := http.NewRequestWithContext(s.ctx, http.MethodPost, s.botURL+"/updates",
-		bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.client.Do(req) //nolint:gosec
-	s.Require().NoError(err)
-	defer func() { _ = resp.Body.Close() }()
-	s.Equal(http.StatusOK, resp.StatusCode)
-}
-
-func (s *E2ESuite) TestScrapper_DeleteUnknownChat() {
-	req, _ := http.NewRequestWithContext(s.ctx, http.MethodDelete, s.scrapperURL+"/tg-chat/999", nil)
-	resp, err := s.client.Do(req) //nolint:gosec
-	s.Require().NoError(err)
-	defer func() { _ = resp.Body.Close() }()
-	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
 func TestE2E(t *testing.T) {

@@ -2,6 +2,7 @@ package bothttp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -28,12 +29,20 @@ func NewServer(addr string, h *Handler) *Server {
 
 // Start begins listening for incoming requests.
 func (s *Server) Start() error {
-	return s.srv.ListenAndServe()
+	err := s.srv.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("http server listen and serve: %w", err)
+	}
+	return nil
 }
 
 // Shutdown gracefully stops the server.
 func (s *Server) Shutdown(ctx context.Context) error {
-	return s.srv.Shutdown(ctx)
+	err := s.srv.Shutdown(ctx)
+	if err != nil {
+		return fmt.Errorf("http server shutdown: %w", err)
+	}
+	return nil
 }
 
 // Handler returns the underlying http.Handler for testing.
