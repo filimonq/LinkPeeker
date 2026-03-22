@@ -56,7 +56,6 @@ integration_test:
       alias: docker
   before_script:
     - apk add --no-cache go gcc musl-dev
-    - echo "$CI_JOB_TOKEN" | docker login gitlab.education.tbank.ru:443 -u gitlab-ci-token --password-stdin
   script:
     - go test -v ./internal/integration/...
   rules:
