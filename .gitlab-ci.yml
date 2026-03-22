@@ -1,4 +1,11 @@
 ---
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH
+
 variables:
   GO_VERSION: "1.25"
   GO_LINTER_VERSION: "v2.10"
@@ -51,7 +58,6 @@ integration_test:
     - apk add --no-cache go gcc musl-dev
     - echo "$CI_JOB_TOKEN" | docker login gitlab.education.tbank.ru:443 -u gitlab-ci-token --password-stdin
   script:
-    - docker pull ${GITLAB_DOCKER_PROXY}/alpine:latest
     - go test -v ./internal/integration/...
   rules:
     - when: always
