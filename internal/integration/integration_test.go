@@ -27,6 +27,7 @@ type E2ESuite struct {
 	client      *http.Client
 	scrapperURL string
 	botURL      string
+	dbURL       string
 }
 
 func (s *E2ESuite) SetupSuite() {
@@ -35,6 +36,7 @@ func (s *E2ESuite) SetupSuite() {
 
 	mockPort := s.startTgMock()
 	dockerNet, gateway := s.startDockerNetwork()
+	s.dbURL = s.startPostgres(dockerNet.Name)
 	s.scrapperURL = s.startScrapper(dockerNet.Name)
 	s.botURL = s.startBot(dockerNet.Name, gateway, mockPort)
 }
@@ -139,6 +141,8 @@ func (s *E2ESuite) startScrapper(netName string) string {
 				"SCRAPPER_PORT":             "8081",
 				"SCRAPPER_GRPC_PORT":        "50051",
 				"SCHEDULE_INTERVAL_SECONDS": "3600",
+				"DATABASE_URL":              "postgres://postgres:postgres@postgres:5432/linktracker?sslmode=disable",
+				"ACCESS_TYPE":               "pgx",
 			},
 			WaitingFor: wait.ForListeningPort("8081/tcp").WithStartupTimeout(30 * time.Second),
 		},
@@ -173,6 +177,8 @@ func (s *E2ESuite) startBot(netName, gateway, mockPort string) string {
 				"TELEGRAM_API_URL": "http://" + gateway + ":" + mockPort,
 				"SCRAPPER_URL":     "scrapper:50051",
 				"BOT_PORT":         "8080",
+				"DATABASE_URL":     "postgres://postgres:postgres@postgres:5432/linktracker?sslmode=disable",
+				"ACCESS_TYPE":      "pgx",
 			},
 			WaitingFor: wait.ForListeningPort("8080/tcp").WithStartupTimeout(30 * time.Second),
 		},
@@ -190,6 +196,33 @@ func (s *E2ESuite) startBot(netName, gateway, mockPort string) string {
 	port, _ := c.MappedPort(s.ctx, "8080")
 
 	return fmt.Sprintf("http://%s:%s", host, port.Port())
+}
+
+func (s *E2ESuite) startPostgres(netName string) string {
+	c, err := testcontainers.GenericContainer(s.ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "postgres:16",
+			ExposedPorts: []string{"5432/tcp"},
+			Networks:     []string{netName},
+			NetworkAliases: map[string][]string{
+				netName: {"postgres"},
+			},
+			Env: map[string]string{
+				"POSTGRES_USER":     "postgres",
+				"POSTGRES_PASSWORD": "postgres",
+				"POSTGRES_DB":       "linktracker",
+			},
+			WaitingFor: wait.ForListeningPort("5432/tcp").WithStartupTimeout(30 * time.Second),
+		},
+		Started: true,
+	})
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = c.Terminate(s.ctx) })
+
+	host, _ := c.Host(s.ctx)
+	port, _ := c.MappedPort(s.ctx, "5432")
+
+	return fmt.Sprintf("postgres://postgres:postgres@%s:%s/linktracker?sslmode=disable", host, port.Port())
 }
 
 func (s *E2ESuite) printLogs(c testcontainers.Container) {
