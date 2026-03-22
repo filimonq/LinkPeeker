@@ -16,6 +16,8 @@ type Config struct {
 	Port             string
 	GRPCPort         string
 	ScheduleInterval time.Duration
+	DatabaseURL      string
+	AccessType       string // "sql" or "squirrel"
 }
 
 // Load reads configuration from environment variables.
@@ -40,6 +42,16 @@ func Load() (*Config, error) {
 	intervalStr := os.Getenv("SCHEDULE_INTERVAL_SECONDS")
 	interval := time.Minute
 
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return nil, errors.New("DATABASE_URL is not set")
+	}
+
+	accessType := os.Getenv("ACCESS_TYPE")
+	if accessType == "" {
+		accessType = "sql"
+	}
+
 	if intervalStr != "" {
 		seconds, err := strconv.Atoi(intervalStr)
 		if err == nil {
@@ -53,5 +65,7 @@ func Load() (*Config, error) {
 		Port:             port,
 		GRPCPort:         grpcPort,
 		ScheduleInterval: interval,
+		DatabaseURL:      dbURL,
+		AccessType:       accessType,
 	}, nil
 }

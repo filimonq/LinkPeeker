@@ -1,18 +1,22 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	bothttp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/http"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/telegram"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/telegram/handlers"
 	scrapperclient "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/clients/scrapper"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/repository/memory"
+	pgxrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/repository/pgx"
+	squirrelrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/repository/squirrel"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service/state"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/migrate"
 )
 
 // Container holds all application dependencies.
@@ -25,10 +29,24 @@ type Container struct {
 
 // NewContainer builds and wires all dependencies.
 func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
-	var (
-		tgClient *tgbotapi.BotAPI
-		err      error
-	)
+	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("connect to db: %w", err)
+	}
+
+	if err = migrate.Run(cfg.DatabaseURL, "database"); err != nil {
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+
+	var userRepo service.UserRepository
+	switch cfg.AccessType {
+	case "squirrel":
+		userRepo = squirrelrepo.NewUserRepository(db)
+	default: // "pgx"
+		userRepo = pgxrepo.NewUserRepository(db)
+	}
+
+	var tgClient *tgbotapi.BotAPI
 	if cfg.TelegramAPIURL != "" {
 		tgClient, err = tgbotapi.NewBotAPIWithAPIEndpoint(cfg.TelegramToken, cfg.TelegramAPIURL+"/bot%s/%s")
 	} else {
@@ -43,7 +61,6 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		return nil, fmt.Errorf("create scrapper client: %w", err)
 	}
 
-	userRepo := memory.NewUserRepository()
 	storage := state.NewStorage()
 
 	handlerList := []service.CommandHandler{

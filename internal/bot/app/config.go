@@ -13,6 +13,8 @@ type Config struct {
 	ScrapperURL    string
 	Port           string
 	TelegramAPIURL string // для test containers
+	DatabaseURL    string
+	AccessType     string // "pgx" or "squirrel"
 }
 
 // Load reads configuration from environment variables.
@@ -34,10 +36,22 @@ func Load() (*Config, error) {
 		port = "8080"
 	}
 
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return nil, errors.New("DATABASE_URL is not set")
+	}
+
+	accessType := os.Getenv("ACCESS_TYPE")
+	if accessType == "" {
+		accessType = "pgx"
+	}
+
 	return &Config{
 		TelegramToken:  token,
 		ScrapperURL:    scrapperURL,
 		Port:           port,
 		TelegramAPIURL: os.Getenv("TELEGRAM_API_URL"),
+		DatabaseURL:    dbURL,
+		AccessType:     accessType,
 	}, nil
 }
