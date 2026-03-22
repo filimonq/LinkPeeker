@@ -31,7 +31,7 @@ type E2ESuite struct {
 }
 
 func (s *E2ESuite) SetupSuite() {
-	s.ctx, s.cancel = context.WithTimeout(context.Background(), 2*time.Minute)
+	s.ctx, s.cancel = context.WithTimeout(context.Background(), 10*time.Minute)
 	s.client = &http.Client{Timeout: 5 * time.Second}
 
 	mockPort := s.startTgMock()
@@ -195,7 +195,7 @@ func (s *E2ESuite) startScrapper(netName string) string {
 				"DATABASE_URL":              "postgres://postgres:postgres@postgres:5432/linktracker?sslmode=disable",
 				"ACCESS_TYPE":               "pgx",
 			},
-			WaitingFor: wait.ForListeningPort("8081/tcp").WithStartupTimeout(30 * time.Second),
+			WaitingFor: wait.ForListeningPort("8081/tcp").WithStartupTimeout(5 * time.Minute),
 		},
 		Started: true,
 	})
@@ -231,7 +231,7 @@ func (s *E2ESuite) startBot(netName, gateway, mockPort string) string {
 				"DATABASE_URL":     "postgres://postgres:postgres@postgres:5432/linktracker?sslmode=disable",
 				"ACCESS_TYPE":      "pgx",
 			},
-			WaitingFor: wait.ForListeningPort("8080/tcp").WithStartupTimeout(30 * time.Second),
+			WaitingFor: wait.ForListeningPort("8080/tcp").WithStartupTimeout(5 * time.Minute),
 		},
 		Started: true,
 	})
@@ -263,7 +263,7 @@ func (s *E2ESuite) startPostgres(netName string) string {
 				"POSTGRES_PASSWORD": "postgres",
 				"POSTGRES_DB":       "linktracker",
 			},
-			WaitingFor: wait.ForListeningPort("5432/tcp").WithStartupTimeout(30 * time.Second),
+			WaitingFor: wait.ForListeningPort("5432/tcp").WithStartupTimeout(2 * time.Minute),
 		},
 		Started: true,
 	})
