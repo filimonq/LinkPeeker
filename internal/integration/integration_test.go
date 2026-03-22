@@ -82,6 +82,57 @@ func (s *E2ESuite) TestScrapper_DeleteUnknownChat() {
 	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
+func (s *E2ESuite) TestScrapper_DeleteLink() {
+	req, _ := http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/tg-chat/2", nil)
+	resp, err := s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	_ = resp.Body.Close()
+
+	body := `{"link":"https://github.com/golang/go","tags":[]}`
+	req, _ = http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/links",
+		bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Tg-Chat-Id", "2")
+	resp, err = s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	_ = resp.Body.Close()
+
+	req, _ = http.NewRequestWithContext(s.ctx, http.MethodDelete, s.scrapperURL+"/links",
+		bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Tg-Chat-Id", "2")
+	resp, err = s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	defer func() { _ = resp.Body.Close() }()
+	s.Equal(http.StatusOK, resp.StatusCode)
+}
+
+func (s *E2ESuite) TestScrapper_DuplicateLink() {
+	req, _ := http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/tg-chat/3", nil)
+	resp, err := s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	_ = resp.Body.Close()
+
+	body := `{"link":"https://github.com/golang/go","tags":[]}`
+
+	req, _ = http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/links",
+		bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Tg-Chat-Id", "3")
+	resp, err = s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	_ = resp.Body.Close()
+
+	req, _ = http.NewRequestWithContext(s.ctx, http.MethodPost, s.scrapperURL+"/links",
+		bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Tg-Chat-Id", "3")
+	resp, err = s.client.Do(req) //nolint:gosec // testing environment
+	s.Require().NoError(err)
+	defer func() { _ = resp.Body.Close() }()
+	s.Equal(http.StatusConflict, resp.StatusCode)
+}
+
 func (s *E2ESuite) startTgMock() string {
 	l, err := net.Listen("tcp", "0.0.0.0:0") //nolint:gosec // G102: needed for Docker accessibility
 	s.Require().NoError(err)
