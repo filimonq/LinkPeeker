@@ -87,8 +87,8 @@ func (r *LinkRepository) Remove(ctx context.Context, chatID int64, url string) (
 	return l, nil
 }
 
-// FindByChatID returns all links for a chat with their tags.
-func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*link.Link, error) {
+// FindByChatID returns all links for a chat with their tags with pagination.
+func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64, limit, offset int) ([]*link.Link, error) {
 	query, args, err := psql.Select(
 		"l.id", "l.url", "l.chat_id", "l.created_at", "l.updated_at",
 		"COALESCE(array_agg(lt.tag) FILTER (WHERE lt.tag IS NOT NULL), '{}')",
@@ -97,6 +97,8 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*lin
 		LeftJoin("link_tags lt ON lt.link_id = l.id").
 		Where(sq.Eq{"l.chat_id": chatID}).
 		GroupBy("l.id").
+		Limit(uint64(limit)).
+		Offset(uint64(offset)).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("build query: %w", err)
@@ -115,8 +117,8 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*lin
 	return links, nil
 }
 
-// FindAll returns all links with their tags.
-func (r *LinkRepository) FindAll(ctx context.Context) ([]*link.Link, error) {
+// FindAll returns all links with their tags with pagination.
+func (r *LinkRepository) FindAll(ctx context.Context, limit, offset int) ([]*link.Link, error) {
 	query, args, err := psql.Select(
 		"l.id", "l.url", "l.chat_id", "l.created_at", "l.updated_at",
 		"COALESCE(array_agg(lt.tag) FILTER (WHERE lt.tag IS NOT NULL), '{}')",
@@ -124,6 +126,8 @@ func (r *LinkRepository) FindAll(ctx context.Context) ([]*link.Link, error) {
 		From("links l").
 		LeftJoin("link_tags lt ON lt.link_id = l.id").
 		GroupBy("l.id").
+		Limit(uint64(limit)).
+		Offset(uint64(offset)).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("build query: %w", err)
@@ -140,6 +144,27 @@ func (r *LinkRepository) FindAll(ctx context.Context) ([]*link.Link, error) {
 		return nil, fmt.Errorf("scan links: %w", err)
 	}
 	return links, nil
+}
+
+// FindByURL returns a link by chatID and url.
+func (r *LinkRepository) FindByURL(ctx context.Context, chatID int64, url string) (*link.Link, error) {
+	query, args, err := psql.Select("id", "url", "chat_id", "created_at", "updated_at").
+		From("links").
+		Where(sq.Eq{"chat_id": chatID, "url": url}).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build query: %w", err)
+	}
+
+	l := &link.Link{}
+	if err = r.db.QueryRow(ctx, query, args...).
+		Scan(&l.ID, &l.URL, &l.ChatID, &l.CreatedAt, &l.UpdatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, link.ErrNotFound
+		}
+		return nil, fmt.Errorf("find link by url: %w", err)
+	}
+	return l, nil
 }
 
 // Exists checks if a link exists for a given chat and url.

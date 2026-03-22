@@ -74,16 +74,17 @@ func (r *LinkRepository) Remove(ctx context.Context, chatID int64, url string) (
 	return l, nil
 }
 
-// FindByChatID returns all links for a chat with their tags.
-func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*link.Link, error) {
+// FindByChatID returns all links for a chat with their tags with pagination.
+func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64, limit, offset int) ([]*link.Link, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT l.id, l.url, l.chat_id, l.created_at, l.updated_at,
 		        COALESCE(array_agg(lt.tag) FILTER (WHERE lt.tag IS NOT NULL), '{}')
 		 FROM links l
 		 LEFT JOIN link_tags lt ON lt.link_id = l.id
 		 WHERE l.chat_id = $1
-		 GROUP BY l.id`,
-		chatID,
+		 GROUP BY l.id
+		 LIMIT $2 OFFSET $3`,
+		chatID, limit, offset,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query links: %w", err)
@@ -97,14 +98,16 @@ func (r *LinkRepository) FindByChatID(ctx context.Context, chatID int64) ([]*lin
 	return links, nil
 }
 
-// FindAll returns all links with their tags.
-func (r *LinkRepository) FindAll(ctx context.Context) ([]*link.Link, error) {
+// FindAll returns all links with their tags with pagination.
+func (r *LinkRepository) FindAll(ctx context.Context, limit, offset int) ([]*link.Link, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT l.id, l.url, l.chat_id, l.created_at, l.updated_at,
 		        COALESCE(array_agg(lt.tag) FILTER (WHERE lt.tag IS NOT NULL), '{}')
 		 FROM links l
 		 LEFT JOIN link_tags lt ON lt.link_id = l.id
-		 GROUP BY l.id`,
+		 GROUP BY l.id
+		 LIMIT $1 OFFSET $2`,
+		limit, offset,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query all links: %w", err)
@@ -116,6 +119,23 @@ func (r *LinkRepository) FindAll(ctx context.Context) ([]*link.Link, error) {
 		return nil, fmt.Errorf("scan links: %w", err)
 	}
 	return links, nil
+}
+
+// FindByURL returns a link by chatID and url.
+func (r *LinkRepository) FindByURL(ctx context.Context, chatID int64, url string) (*link.Link, error) {
+	l := &link.Link{}
+	err := r.db.QueryRow(ctx,
+		`SELECT id, url, chat_id, created_at, updated_at
+		 FROM links WHERE chat_id = $1 AND url = $2`,
+		chatID, url,
+	).Scan(&l.ID, &l.URL, &l.ChatID, &l.CreatedAt, &l.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, link.ErrNotFound
+		}
+		return nil, fmt.Errorf("find link by url: %w", err)
+	}
+	return l, nil
 }
 
 // Exists checks if a link exists for a given chat and url.

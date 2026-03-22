@@ -38,14 +38,17 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 
 	var chatRepo service.ChatRepository
 	var linkRepo service.LinkRepository
+	var tagRepo service.TagRepository
 
 	switch cfg.AccessType {
 	case "squirrel":
 		chatRepo = squirrelrepo.NewChatRepository(db)
 		linkRepo = squirrelrepo.NewLinkRepository(db)
+		tagRepo = squirrelrepo.NewTagRepository(db)
 	default: // "pgx"
 		chatRepo = pgxrepo.NewChatRepository(db)
 		linkRepo = pgxrepo.NewLinkRepository(db)
+		tagRepo = pgxrepo.NewTagRepository(db)
 	}
 
 	botClient, err := botclient.NewClient(cfg.BotURL)
@@ -58,7 +61,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		stackoverflow.NewClient(),
 	}
 
-	svc := service.NewScrapperService(chatRepo, linkRepo, checkers, botClient)
+	svc := service.NewScrapperService(chatRepo, linkRepo, tagRepo, checkers, botClient)
 
 	handler := httphandler.NewHandler(svc, logger)
 	server := httphandler.NewServer(":"+cfg.Port, handler)
