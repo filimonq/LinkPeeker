@@ -35,7 +35,7 @@ test:
     - when: always
 
 integration_test:
-  image: ${GOLANG_IMAGE}
+  image: docker
   stage: test
   variables:
     DOCKER_HOST: tcp://docker:2376
@@ -48,9 +48,10 @@ integration_test:
     - name: docker:dind
       alias: docker
   before_script:
-    - apk add --no-cache gcc musl-dev
+    - apk add --no-cache go gcc musl-dev
     - echo "$CI_JOB_TOKEN" | docker login gitlab.education.tbank.ru:443 -u gitlab-ci-token --password-stdin
   script:
+    - docker pull ${GITLAB_DOCKER_PROXY}/alpine:latest
     - go test -v ./internal/integration/...
   rules:
     - when: always
