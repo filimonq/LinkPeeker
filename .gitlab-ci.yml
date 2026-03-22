@@ -45,6 +45,9 @@ integration_test:
   image: docker
   stage: test
   timeout: 15m
+  cache:
+    paths:
+      - .go/pkg/mod/
   variables:
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: "/certs"
