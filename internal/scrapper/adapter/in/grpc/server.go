@@ -4,6 +4,7 @@ package grpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 
 	googlegrpc "google.golang.org/grpc"
@@ -33,12 +34,17 @@ func NewServer(svc service.ScrapperService) *Server {
 }
 
 // Start begins listening for gRPC requests.
-func (s *Server) Start(addr string) error {
-	lis, err := net.Listen("tcp", addr)
+func (s *Server) Start(ctx context.Context, addr string) error {
+	var lc net.ListenConfig
+	lis, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
-		return err
+		return fmt.Errorf("grpc tcp listen: %w", err)
 	}
-	return s.grpc.Serve(lis)
+
+	if err = s.grpc.Serve(lis); err != nil {
+		return fmt.Errorf("grpc server serve: %w", err)
+	}
+	return nil
 }
 
 // Stop gracefully stops the gRPC server.
@@ -50,9 +56,9 @@ func (s *Server) Stop() {
 func (s *Server) RegisterChat(ctx context.Context, req *scrapperpb.RegisterChatRequest) (*scrapperpb.RegisterChatResponse, error) {
 	if err := s.svc.RegisterChat(ctx, req.ChatId); err != nil {
 		if errors.Is(err, chat.ErrAlreadyExists) {
-			return nil, status.Error(codes.AlreadyExists, "chat already registered")
+			return nil, status.Errorf(codes.AlreadyExists, "chat already registered: %v", err)
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "register chat failed: %v", err)
 	}
 	return &scrapperpb.RegisterChatResponse{}, nil
 }
@@ -61,9 +67,9 @@ func (s *Server) RegisterChat(ctx context.Context, req *scrapperpb.RegisterChatR
 func (s *Server) DeleteChat(ctx context.Context, req *scrapperpb.DeleteChatRequest) (*scrapperpb.DeleteChatResponse, error) {
 	if err := s.svc.DeleteChat(ctx, req.ChatId); err != nil {
 		if errors.Is(err, chat.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "chat not found")
+			return nil, status.Errorf(codes.NotFound, "chat not found: %v", err)
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "delete chat failed: %v", err)
 	}
 	return &scrapperpb.DeleteChatResponse{}, nil
 }
@@ -73,12 +79,12 @@ func (s *Server) AddLink(ctx context.Context, req *scrapperpb.AddLinkRequest) (*
 	l, err := s.svc.AddLink(ctx, req.ChatId, req.Url, req.Tags)
 	if err != nil {
 		if errors.Is(err, chat.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "chat not found")
+			return nil, status.Errorf(codes.NotFound, "chat not found: %v", err)
 		}
 		if errors.Is(err, link.ErrAlreadyExists) {
-			return nil, status.Error(codes.AlreadyExists, "link already exists")
+			return nil, status.Errorf(codes.AlreadyExists, "link already exists: %v", err)
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "add link failed: %v", err)
 	}
 	return &scrapperpb.LinkResponse{
 		Id:   int64(l.ID),
@@ -92,12 +98,12 @@ func (s *Server) RemoveLink(ctx context.Context, req *scrapperpb.RemoveLinkReque
 	l, err := s.svc.RemoveLink(ctx, req.ChatId, req.Url)
 	if err != nil {
 		if errors.Is(err, chat.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "chat not found")
+			return nil, status.Errorf(codes.NotFound, "chat not found: %v", err)
 		}
 		if errors.Is(err, link.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "link not found")
+			return nil, status.Errorf(codes.NotFound, "link not found: %v", err)
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "remove link failed: %v", err)
 	}
 	return &scrapperpb.LinkResponse{
 		Id:   int64(l.ID),
@@ -111,9 +117,9 @@ func (s *Server) ListLinks(ctx context.Context, req *scrapperpb.ListLinksRequest
 	links, err := s.svc.ListLinks(ctx, req.ChatId)
 	if err != nil {
 		if errors.Is(err, chat.ErrNotFound) {
-			return nil, status.Error(codes.NotFound, "chat not found")
+			return nil, status.Errorf(codes.NotFound, "chat not found: %v", err)
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "list links failed: %v", err)
 	}
 
 	pbLinks := make([]*scrapperpb.LinkResponse, len(links))

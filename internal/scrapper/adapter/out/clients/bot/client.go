@@ -51,7 +51,7 @@ func (c *Client) SendUpdate(ctx context.Context, update pkgdomain.LinkUpdate) er
 		return fmt.Errorf("do request: %w", err)
 	}
 	defer func() {
-		if err := resp.Body.Close(); err != nil {
+		if err = resp.Body.Close(); err != nil {
 			_ = err
 		}
 	}()

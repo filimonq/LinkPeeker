@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/botuser"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
 )
 
@@ -35,21 +35,21 @@ func (h *StartHandler) Handle(ctx context.Context, cmd domain.Command) (domain.O
 	_, err := h.repo.FindByID(ctx, cmd.From)
 
 	if err != nil {
-		if !errors.Is(err, user.ErrNotFound) {
+		if !errors.Is(err, botuser.ErrNotFound) {
 			return domain.OutgoingMessage{}, fmt.Errorf("failed to check user existence: %w", err)
 		}
 
-		newUser := &user.User{
+		newUser := &botuser.User{
 			ID:        cmd.From,
 			Username:  cmd.FromUser,
 			CreatedAt: time.Now(),
 		}
 
-		if err := h.repo.Save(ctx, newUser); err != nil {
+		if err = h.repo.Save(ctx, newUser); err != nil {
 			return domain.OutgoingMessage{}, fmt.Errorf("failed to register new user: %w", err)
 		}
 
-		if err := h.scrapper.RegisterChat(ctx, cmd.ChatID); err != nil {
+		if err = h.scrapper.RegisterChat(ctx, cmd.ChatID); err != nil {
 			return domain.OutgoingMessage{}, fmt.Errorf("failed to register chat: %w", err)
 		}
 
@@ -58,7 +58,7 @@ func (h *StartHandler) Handle(ctx context.Context, cmd domain.Command) (domain.O
 			Text:   "Добро пожаловать!",
 		}, nil
 	}
-	if err := h.scrapper.RegisterChat(ctx, cmd.ChatID); err != nil {
+	if err = h.scrapper.RegisterChat(ctx, cmd.ChatID); err != nil {
 		return domain.OutgoingMessage{}, fmt.Errorf("failed to register chat: %w", err)
 	}
 	return domain.OutgoingMessage{

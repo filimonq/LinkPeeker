@@ -37,7 +37,10 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
-	return s.server.Shutdown(ctx)
+	if err := s.server.Shutdown(ctx); err != nil {
+		return fmt.Errorf("http server shutdown: %w", err)
+	}
+	return nil
 }
 
 // Handler returns the underlying http.Handler for testing.

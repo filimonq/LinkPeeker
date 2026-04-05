@@ -8,4 +8,5 @@ RUN go build -o scrapper ./cmd/scrapper
 FROM alpine:3.19
 WORKDIR /app
 COPY --from=builder /app/scrapper .
+COPY --from=builder /app/database ./database
 CMD ["./scrapper"]

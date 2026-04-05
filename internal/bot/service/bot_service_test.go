@@ -10,7 +10,7 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/telegram/handlers"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/repository/memory"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/botuser"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service/state"
 )
@@ -60,6 +60,7 @@ func newFullSvc(scrapper service.ScrapperClient) service.BotService {
 }
 
 func TestBotService_Handle(t *testing.T) {
+	t.Parallel()
 	tests := map[string]struct {
 		cmd          domain.Command
 		expectedText string
@@ -84,7 +85,7 @@ func TestBotService_Handle(t *testing.T) {
 			svc := newSvc()
 			resp, err := svc.HandleCommand(context.Background(), tt.cmd)
 
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Contains(t, resp.Text, tt.expectedText)
 			assert.Equal(t, tt.cmd.ChatID, resp.ChatID)
 		})
@@ -97,14 +98,14 @@ func TestBotService_Start_ExistingUser(t *testing.T) {
 		handlers.NewStartHandler(userRepo, &mockScrapperWithLinks{}),
 	}, state.NewStorage())
 
-	cmd := domain.Command{Type: domain.CommandStart, ChatID: 123, From: user.ID(99)}
+	cmd := domain.Command{Type: domain.CommandStart, ChatID: 123, From: botuser.ID(99)}
 
 	_, err := svc.HandleCommand(context.Background(), cmd)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// второй вызов
 	resp, err := svc.HandleCommand(context.Background(), cmd)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Contains(t, resp.Text, "С возвращением")
 }
 

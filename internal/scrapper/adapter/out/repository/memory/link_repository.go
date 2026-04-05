@@ -56,24 +56,52 @@ func (r *LinkRepository) Remove(_ context.Context, chatID int64, url string) (*l
 	return nil, link.ErrNotFound
 }
 
-// FindByChatID returns all links for a given chat ID.
-func (r *LinkRepository) FindByChatID(_ context.Context, chatID int64) ([]*link.Link, error) {
+// FindByChatID returns links for a given chat ID with pagination.
+func (r *LinkRepository) FindByChatID(_ context.Context, chatID int64, limit, offset int) ([]*link.Link, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	return r.links[chatID], nil
+	all := r.links[chatID]
+	if offset >= len(all) {
+		return nil, nil
+	}
+	end := offset + limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return all[offset:end], nil
 }
 
-// FindAll returns all links in the repository.
-func (r *LinkRepository) FindAll(_ context.Context) ([]*link.Link, error) {
+// FindAll returns all links with pagination.
+func (r *LinkRepository) FindAll(_ context.Context, limit, offset int) ([]*link.Link, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var result []*link.Link
+	var all []*link.Link
 	for _, links := range r.links {
-		result = append(result, links...)
+		all = append(all, links...)
 	}
-	return result, nil
+	if offset >= len(all) {
+		return nil, nil
+	}
+	end := offset + limit
+	if end > len(all) {
+		end = len(all)
+	}
+	return all[offset:end], nil
+}
+
+// FindByURL returns a link by chatID and url.
+func (r *LinkRepository) FindByURL(_ context.Context, chatID int64, url string) (*link.Link, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, l := range r.links[chatID] {
+		if l.URL == url {
+			return l, nil
+		}
+	}
+	return nil, link.ErrNotFound
 }
 
 // Exists checks if a link exists in the repository.

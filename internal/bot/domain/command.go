@@ -1,7 +1,7 @@
 // Package domain contains domain entities.
 package domain
 
-import bot_user "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
+import "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/botuser"
 
 // CommandType represents a bot command string.
 type CommandType string
@@ -22,7 +22,7 @@ const (
 type Command struct {
 	Type     CommandType
 	Payload  string
-	From     bot_user.ID
+	From     botuser.ID
 	ChatID   int64
 	FromUser string
 }

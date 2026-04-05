@@ -4,16 +4,17 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/botuser"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service/state"
 )
 
 // UserRepository defines storage operations for users.
 type UserRepository interface {
-	FindByID(ctx context.Context, id user.ID) (*user.User, error)
-	Save(ctx context.Context, u *user.User) error
+	FindByID(ctx context.Context, id botuser.ID) (*botuser.User, error)
+	Save(ctx context.Context, u *botuser.User) error
 }
 
 // CommandHandler processes a specific bot command.
@@ -79,5 +80,10 @@ func (s *botService) HandleCommand(ctx context.Context, cmd domain.Command) (dom
 			Text:   "Неизвестная команда. Воспользуйтесь /help.",
 		}, nil
 	}
-	return handler.Handle(ctx, cmd)
+	resp, err := handler.Handle(ctx, cmd)
+	if err != nil {
+		return domain.OutgoingMessage{}, fmt.Errorf("handle command %s: %w", cmd.Type, err)
+	}
+
+	return resp, nil
 }

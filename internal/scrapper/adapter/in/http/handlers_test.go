@@ -3,10 +3,10 @@ package scrapperhttp_test
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,7 +20,8 @@ import (
 func newTestScrapperServer() *httptest.Server {
 	chatRepo := memory.NewChatRepository()
 	linkRepo := memory.NewLinkRepository()
-	svc := service.NewScrapperService(chatRepo, linkRepo, nil, nil)
+	tagRepo := memory.NewTagRepository()
+	svc := service.NewScrapperService(chatRepo, linkRepo, tagRepo, nil, nil)
 	handler := scrapperhttp.NewHandler(svc, slog.Default())
 	server := scrapperhttp.NewServer(":0", handler)
 	return httptest.NewServer(server.Handler())
@@ -31,9 +32,9 @@ func post(t *testing.T, srv *httptest.Server, path string, body string, chatID i
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	if chatID != 0 {
-		req.Header.Set("Tg-Chat-Id", fmt.Sprintf("%d", chatID))
+		req.Header.Set("Tg-Chat-Id", strconv.FormatInt(chatID, 10))
 	}
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // intentional for local test server
 	require.NoError(t, err)
 	return resp
 }
@@ -43,9 +44,9 @@ func del(t *testing.T, srv *httptest.Server, path string, body string, chatID in
 	req, _ := http.NewRequest(http.MethodDelete, srv.URL+path, bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	if chatID != 0 {
-		req.Header.Set("Tg-Chat-Id", fmt.Sprintf("%d", chatID))
+		req.Header.Set("Tg-Chat-Id", strconv.FormatInt(chatID, 10))
 	}
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // intentional for local test server
 	require.NoError(t, err)
 	return resp
 }
@@ -54,9 +55,9 @@ func get(t *testing.T, srv *httptest.Server, path string, chatID int64) *http.Re
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+path, nil)
 	if chatID != 0 {
-		req.Header.Set("Tg-Chat-Id", fmt.Sprintf("%d", chatID))
+		req.Header.Set("Tg-Chat-Id", strconv.FormatInt(chatID, 10))
 	}
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // intentional for local test server
 	require.NoError(t, err)
 	return resp
 }

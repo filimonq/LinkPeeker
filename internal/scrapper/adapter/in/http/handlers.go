@@ -40,7 +40,7 @@ func (h *Handler) registerChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.RegisterChat(r.Context(), id); err != nil {
+	if err = h.svc.RegisterChat(r.Context(), id); err != nil {
 		if errors.Is(err, chat.ErrAlreadyExists) {
 			h.writeError(w, http.StatusConflict, "chat already exists")
 			return
@@ -60,7 +60,7 @@ func (h *Handler) deleteChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.svc.DeleteChat(r.Context(), id); err != nil {
+	if err = h.svc.DeleteChat(r.Context(), id); err != nil {
 		if errors.Is(err, chat.ErrNotFound) {
 			h.writeError(w, http.StatusNotFound, "chat not found")
 			return
@@ -109,7 +109,7 @@ func (h *Handler) addLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req AddLinkRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -140,7 +140,7 @@ func (h *Handler) deleteLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req RemoveLinkRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

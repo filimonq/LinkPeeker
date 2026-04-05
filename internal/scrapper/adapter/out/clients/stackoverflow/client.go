@@ -59,7 +59,7 @@ func (c *Client) GetLastUpdated(ctx context.Context, url string) (time.Time, err
 		return time.Time{}, fmt.Errorf("do request: %w", err)
 	}
 	defer func() {
-		if err := resp.Body.Close(); err != nil {
+		if err = resp.Body.Close(); err != nil {
 			_ = err
 		}
 	}()
@@ -69,7 +69,7 @@ func (c *Client) GetLastUpdated(ctx context.Context, url string) (time.Time, err
 	}
 
 	var result soResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return time.Time{}, fmt.Errorf("decode response: %w", err)
 	}
 

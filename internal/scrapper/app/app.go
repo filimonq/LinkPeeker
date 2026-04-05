@@ -27,7 +27,8 @@ func (a *App) Run() error {
 		return fmt.Errorf("build container: %w", err)
 	}
 
-	if err := container.Scheduler.Start(); err != nil {
+	err = container.Scheduler.Start()
+	if err != nil {
 		return fmt.Errorf("start scheduler: %w", err)
 	}
 
@@ -36,15 +37,15 @@ func (a *App) Run() error {
 
 	go func() {
 		a.logger.Info("scrapper http starting", slog.String("port", a.cfg.Port))
-		if err := container.Server.Start(); err != nil {
-			a.logger.Error("server error", slog.String("error", err.Error()))
+		if srvErr := container.Server.Start(); srvErr != nil {
+			a.logger.Error("server error", slog.String("error", srvErr.Error()))
 		}
 	}()
 
 	go func() {
 		a.logger.Info("scrapper grpc starting", slog.String("port", a.cfg.GRPCPort))
-		if err := container.GRPCServer.Start(":" + a.cfg.GRPCPort); err != nil {
-			a.logger.Error("grpc server error", slog.String("error", err.Error()))
+		if grpcErr := container.GRPCServer.Start(ctx, ":"+a.cfg.GRPCPort); grpcErr != nil {
+			a.logger.Error("grpc server error", slog.String("error", grpcErr.Error()))
 		}
 	}()
 
@@ -52,11 +53,13 @@ func (a *App) Run() error {
 	a.logger.Info("scrapper is shutting down")
 	container.GRPCServer.Stop()
 
-	if err := container.Scheduler.Stop(); err != nil {
+	err = container.Scheduler.Stop()
+	if err != nil {
 		a.logger.Error("scheduler stop error", slog.String("error", err.Error()))
 	}
 
-	if err := container.Server.Shutdown(context.Background()); err != nil {
+	err = container.Server.Shutdown(context.Background())
+	if err != nil {
 		a.logger.Error("server shutdown error", slog.String("error", err.Error()))
 	}
 

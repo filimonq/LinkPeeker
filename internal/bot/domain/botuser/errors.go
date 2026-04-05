@@ -1,4 +1,4 @@
-package user
+package botuser
 
 import "errors"
 

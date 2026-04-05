@@ -37,6 +37,11 @@ func (h *MessageHandler) Handle(ctx context.Context, cmd domain.Command) (domain
 		return h.handleTags(ctx, cmd)
 	case state.WaitingUntrackURL:
 		return h.handleUntrackURL(ctx, cmd)
+	case state.Idle:
+		return domain.OutgoingMessage{
+			ChatID: cmd.ChatID,
+			Text:   "Используй /help чтобы увидеть доступные команды",
+		}, nil
 	default:
 		return domain.OutgoingMessage{
 			ChatID: cmd.ChatID,

@@ -1,5 +1,5 @@
-// Package user contains user domain entity.
-package user
+// Package botuser contains user domain entity.
+package botuser
 
 import "time"
 

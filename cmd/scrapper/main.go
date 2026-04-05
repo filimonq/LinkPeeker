@@ -1,3 +1,4 @@
+// Package main is the entry point for the scrapper service.
 package main
 
 import (
@@ -16,7 +17,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := app.New(logger, cfg).Run(); err != nil {
+	if err = app.New(logger, cfg).Run(); err != nil {
 		logger.Error("scrapper terminated with error", "err", err)
 		os.Exit(1)
 	}

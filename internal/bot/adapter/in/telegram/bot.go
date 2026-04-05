@@ -7,7 +7,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
-	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/user"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/botuser"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
 )
 
@@ -43,6 +43,11 @@ func (b *Bot) Start(ctx context.Context) {
 	}
 }
 
+// Send implements service.MessageSender — sends a text message to a chat.
+func (b *Bot) Send(chatID int64, text string) {
+	b.sendMessage(domain.OutgoingMessage{ChatID: chatID, Text: text})
+}
+
 func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	if update.Message.From == nil {
 		b.logger.Warn("received message without sender")
@@ -70,7 +75,7 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 }
 
 func (b *Bot) parseCommand(msg *tgbotapi.Message) domain.Command {
-	cmdType := domain.CommandUnknown
+	var cmdType domain.CommandType
 	var payload string
 
 	if msg.IsCommand() {
@@ -82,6 +87,11 @@ func (b *Bot) parseCommand(msg *tgbotapi.Message) domain.Command {
 			domain.CommandTrack, domain.CommandUntrack,
 			domain.CommandList, domain.CommandCancel:
 			cmdType = domain.CommandType(rawCmd)
+		case domain.CommandUnknown, domain.CommandMessage:
+			cmdType = domain.CommandUnknown
+
+		default:
+			cmdType = domain.CommandUnknown
 		}
 	} else {
 		cmdType = domain.CommandMessage
@@ -92,7 +102,7 @@ func (b *Bot) parseCommand(msg *tgbotapi.Message) domain.Command {
 		Type:     cmdType,
 		Payload:  payload,
 		ChatID:   msg.Chat.ID,
-		From:     user.ID(msg.From.ID),
+		From:     botuser.ID(msg.From.ID),
 		FromUser: msg.From.UserName,
 	}
 }
@@ -105,9 +115,4 @@ func (b *Bot) sendMessage(msg domain.OutgoingMessage) {
 			slog.String("error", err.Error()),
 		)
 	}
-}
-
-// Send implements service.MessageSender — sends a text message to a chat.
-func (b *Bot) Send(chatID int64, text string) {
-	b.sendMessage(domain.OutgoingMessage{ChatID: chatID, Text: text})
 }
