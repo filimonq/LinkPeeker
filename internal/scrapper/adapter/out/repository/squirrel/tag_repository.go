@@ -19,11 +19,11 @@ func NewTagRepository(db *pgxpool.Pool) *TagRepository {
 	return &TagRepository{db: db}
 }
 
-// Add adds a tag to a link.
-func (r *TagRepository) Add(ctx context.Context, linkID link.ID, tag string) error {
+// Add adds a tag to a subscription.
+func (r *TagRepository) Add(ctx context.Context, chatID int64, linkID link.ID, tag string) error {
 	query, args, err := psql.Insert("link_tags").
-		Columns("link_id", "tag").
-		Values(linkID, tag).
+		Columns("chat_id", "link_id", "tag").
+		Values(chatID, linkID, tag).
 		Suffix("ON CONFLICT DO NOTHING").
 		ToSql()
 	if err != nil {
@@ -35,10 +35,10 @@ func (r *TagRepository) Add(ctx context.Context, linkID link.ID, tag string) err
 	return nil
 }
 
-// Remove removes a tag from a link.
-func (r *TagRepository) Remove(ctx context.Context, linkID link.ID, tag string) error {
+// Remove removes a tag from a subscription.
+func (r *TagRepository) Remove(ctx context.Context, chatID int64, linkID link.ID, tag string) error {
 	query, args, err := psql.Delete("link_tags").
-		Where(sq.Eq{"link_id": linkID, "tag": tag}).
+		Where(sq.Eq{"chat_id": chatID, "link_id": linkID, "tag": tag}).
 		ToSql()
 	if err != nil {
 		return fmt.Errorf("build query: %w", err)
@@ -49,11 +49,11 @@ func (r *TagRepository) Remove(ctx context.Context, linkID link.ID, tag string) 
 	return nil
 }
 
-// FindByLinkID returns all tags for a link.
-func (r *TagRepository) FindByLinkID(ctx context.Context, linkID link.ID) ([]string, error) {
+// FindBySubscription returns all tags for a subscription.
+func (r *TagRepository) FindBySubscription(ctx context.Context, chatID int64, linkID link.ID) ([]string, error) {
 	query, args, err := psql.Select("tag").
 		From("link_tags").
-		Where(sq.Eq{"link_id": linkID}).
+		Where(sq.Eq{"chat_id": chatID, "link_id": linkID}).
 		ToSql()
 	if err != nil {
 		return nil, fmt.Errorf("build query: %w", err)

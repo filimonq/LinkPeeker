@@ -14,7 +14,7 @@ func ScanLinks(rows pgx.Rows) ([]*link.Link, error) {
 	var links []*link.Link
 	for rows.Next() {
 		l := &link.Link{}
-		if err := rows.Scan(&l.ID, &l.URL, &l.ChatID, &l.CreatedAt, &l.UpdatedAt, &l.Tags); err != nil {
+		if err := rows.Scan(&l.ID, &l.URL, &l.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan link: %w", err)
 		}
 		links = append(links, l)

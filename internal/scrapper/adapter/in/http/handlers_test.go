@@ -21,7 +21,7 @@ func newTestScrapperServer() *httptest.Server {
 	chatRepo := memory.NewChatRepository()
 	linkRepo := memory.NewLinkRepository()
 	tagRepo := memory.NewTagRepository()
-	svc := service.NewScrapperService(chatRepo, linkRepo, tagRepo, nil, nil)
+	svc := service.NewScrapperService(chatRepo, linkRepo, memory.NewSubscriptionRepository(linkRepo), tagRepo, nil, nil, 4, 10)
 	handler := scrapperhttp.NewHandler(svc, slog.Default())
 	server := scrapperhttp.NewServer(":0", handler)
 	return httptest.NewServer(server.Handler())

@@ -39,12 +39,15 @@ func (m *mockNotifier) SendUpdate(_ context.Context, u pkgdomain.LinkUpdate) err
 func TestCheckUpdates_NotifiesOnlySubscribedChats(t *testing.T) {
 	chatRepo := memory.NewChatRepository()
 	linkRepo := memory.NewLinkRepository()
+
+	subsRepo := memory.NewSubscriptionRepository(linkRepo)
 	tagRepo := memory.NewTagRepository()
+
 	notifier := &mockNotifier{}
 	url := "https://github.com/user/repo"
 	checker := &mockChecker{url: url, updated: time.Now().Add(time.Second)}
 
-	svc := service.NewScrapperService(chatRepo, linkRepo, tagRepo, []service.LinkChecker{checker}, notifier)
+	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 4, 10)
 	ctx := context.Background()
 
 	require.NoError(t, svc.RegisterChat(ctx, 1))
@@ -62,12 +65,13 @@ func TestCheckUpdates_NotifiesOnlySubscribedChats(t *testing.T) {
 func TestCheckUpdates_OtherChatsNotNotified(t *testing.T) {
 	chatRepo := memory.NewChatRepository()
 	linkRepo := memory.NewLinkRepository()
+	subsRepo := memory.NewSubscriptionRepository(linkRepo)
 	tagRepo := memory.NewTagRepository()
 	notifier := &mockNotifier{}
 	url := "https://github.com/user/repo"
 	checker := &mockChecker{url: url, updated: time.Now().Add(time.Second)}
 
-	svc := service.NewScrapperService(chatRepo, linkRepo, tagRepo, []service.LinkChecker{checker}, notifier)
+	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 4, 10)
 	ctx := context.Background()
 
 	require.NoError(t, svc.RegisterChat(ctx, 1))

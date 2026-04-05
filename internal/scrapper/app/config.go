@@ -18,6 +18,8 @@ type Config struct {
 	ScheduleInterval time.Duration
 	DatabaseURL      string
 	AccessType       string // "sql" or "squirrel"
+	WorkerCount      int
+	BatchSize        int
 }
 
 // Load reads configuration from environment variables.
@@ -39,9 +41,6 @@ func Load() (*Config, error) {
 		grpcPort = "50051"
 	}
 
-	intervalStr := os.Getenv("SCHEDULE_INTERVAL_SECONDS")
-	interval := time.Minute
-
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		return nil, errors.New("DATABASE_URL is not set")
@@ -52,10 +51,24 @@ func Load() (*Config, error) {
 		accessType = "sql"
 	}
 
-	if intervalStr != "" {
-		seconds, err := strconv.Atoi(intervalStr)
-		if err == nil {
+	interval := time.Minute
+	if intervalStr := os.Getenv("SCHEDULE_INTERVAL_SECONDS"); intervalStr != "" {
+		if seconds, err := strconv.Atoi(intervalStr); err == nil {
 			interval = time.Duration(seconds) * time.Second
+		}
+	}
+
+	workerCount := 4
+	if wcStr := os.Getenv("WORKER_COUNT"); wcStr != "" {
+		if val, err := strconv.Atoi(wcStr); err == nil {
+			workerCount = val
+		}
+	}
+
+	batchSize := 10
+	if bsStr := os.Getenv("BATCH_SIZE"); bsStr != "" {
+		if val, err := strconv.Atoi(bsStr); err == nil {
+			batchSize = val
 		}
 	}
 
@@ -67,5 +80,7 @@ func Load() (*Config, error) {
 		ScheduleInterval: interval,
 		DatabaseURL:      dbURL,
 		AccessType:       accessType,
+		WorkerCount:      workerCount,
+		BatchSize:        batchSize,
 	}, nil
 }

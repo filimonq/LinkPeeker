@@ -36,18 +36,22 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
-	var chatRepo service.ChatRepository
-	var linkRepo service.LinkRepository
-	var tagRepo service.TagRepository
-
+	var (
+		chatRepo         service.ChatRepository
+		linkRepo         service.LinkRepository
+		subscriptionRepo service.SubscriptionRepository
+		tagRepo          service.TagRepository
+	)
 	switch cfg.AccessType {
 	case "squirrel":
 		chatRepo = squirrelrepo.NewChatRepository(db)
 		linkRepo = squirrelrepo.NewLinkRepository(db)
+		subscriptionRepo = squirrelrepo.NewSubscriptionRepository(db)
 		tagRepo = squirrelrepo.NewTagRepository(db)
 	default: // "pgx"
 		chatRepo = pgxrepo.NewChatRepository(db)
 		linkRepo = pgxrepo.NewLinkRepository(db)
+		subscriptionRepo = pgxrepo.NewSubscriptionRepository(db)
 		tagRepo = pgxrepo.NewTagRepository(db)
 	}
 
@@ -61,7 +65,16 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		stackoverflow.NewClient(),
 	}
 
-	svc := service.NewScrapperService(chatRepo, linkRepo, tagRepo, checkers, botClient)
+	svc := service.NewScrapperService(
+		chatRepo,
+		linkRepo,
+		subscriptionRepo,
+		tagRepo,
+		checkers,
+		botClient,
+		cfg.WorkerCount,
+		cfg.BatchSize,
+	)
 
 	handler := httphandler.NewHandler(svc, logger)
 	server := httphandler.NewServer(":"+cfg.Port, handler)
