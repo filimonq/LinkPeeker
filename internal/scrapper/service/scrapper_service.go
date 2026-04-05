@@ -5,12 +5,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/chat"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
+	"golang.org/x/sync/errgroup"
 )
 
 // ChatRepository defines storage operations for chats.
@@ -60,7 +62,9 @@ type ScrapperService interface {
 
 // LinkChecker checks for updates at a given URL.
 type LinkChecker interface {
-	GetLastUpdated(ctx context.Context, url string) (time.Time, error)
+	// GetUpdate returns full update info for the given URL.
+	GetUpdate(ctx context.Context, url string) (*pkgdomain.UpdateInfo, error)
+	// Supports returns true if the checker can handle this URL.
 	Supports(url string) bool
 }
 
@@ -170,8 +174,6 @@ func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url stri
 		return nil, chat.ErrNotFound
 	}
 
-	// теги удалятся каскадно через FK в link_tags, но до удаления подписки
-	// получаем их, чтобы вернуть в ответе
 	l, err := s.links.FindByURL(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("find link: %w", err)
@@ -259,38 +261,53 @@ func (s *scrapperService) CheckUpdates(ctx context.Context) error {
 		return nil
 	}
 
-	var wg sync.WaitGroup
-	jobs := make(chan *link.Link, len(links))
-	failedURLs := make(chan string, len(links))
+	g, gCtx := errgroup.WithContext(ctx)
+	jobs := make(chan *link.Link)
+
+	g.Go(func() error {
+		defer close(jobs)
+		for _, l := range links {
+			select {
+			case jobs <- l:
+			case <-gCtx.Done():
+				return gCtx.Err()
+			}
+		}
+		return nil
+	})
+
+	var mu sync.Mutex
+	var failedURLs []string
 
 	for range s.workerCount {
-		wg.Go(func() { // ЭТО КРУТО
+		g.Go(func() error {
 			for l := range jobs {
-				if err = s.processSingleLink(ctx, l); err != nil {
-					slog.Error("failed to process link", "url", l.URL, "err", err)
-					failedURLs <- l.URL
+				err = s.processSingleLink(gCtx, l)
+
+				if updateErr := s.links.UpdateCheckedTime(gCtx, l.ID); updateErr != nil {
+					slog.Error("failed to update checked time", "url", l.URL, "err", updateErr)
 				}
 
-				if err = s.links.UpdateCheckedTime(ctx, l.ID); err != nil {
-					slog.Error("failed to update checked time", "url", l.URL, "err", err)
+				if err != nil {
+					slog.Error("failed to process link", "url", l.URL, "err", err)
+					mu.Lock()
+					failedURLs = append(failedURLs, l.URL)
+					mu.Unlock()
 				}
 			}
+			return nil
 		})
 	}
 
-	for _, l := range links {
-		jobs <- l
+	if err = g.Wait(); err != nil {
+		return fmt.Errorf("worker pool error: %w", err)
 	}
-	close(jobs)
-	wg.Wait()
-	close(failedURLs)
 
 	if len(failedURLs) > 0 {
-		var urls []string
-		for u := range failedURLs {
-			urls = append(urls, u)
-		}
-		slog.Warn("batch processing finished with errors", "failed_count", len(urls), "failed_urls", urls)
+		slog.Warn("batch processing finished with errors",
+			"failed_count", len(failedURLs),
+			"failed_urls", failedURLs,
+		)
 	}
 
 	return nil
@@ -302,36 +319,78 @@ func (s *scrapperService) processSingleLink(ctx context.Context, l *link.Link) e
 		return nil
 	}
 
-	updatedAt, checkErr := checker.GetLastUpdated(ctx, l.URL)
-	if checkErr != nil {
-		return fmt.Errorf("get last updated: %w", checkErr)
+	info, err := checker.GetUpdate(ctx, l.URL)
+	if err != nil {
+		return fmt.Errorf("get update: %w", err)
 	}
 
-	if !updatedAt.After(l.UpdatedAt) {
+	if !info.UpdatedAt.After(l.UpdatedAt) {
 		return nil
 	}
 
-	chatIDs, chatErr := s.subs.FindChatsByLinkID(ctx, l.ID)
-	if chatErr != nil {
-		return fmt.Errorf("find chats: %w", chatErr)
+	chatIDs, err := s.subs.FindChatsByLinkID(ctx, l.ID)
+	if err != nil {
+		return fmt.Errorf("find chats: %w", err)
 	}
 
 	if len(chatIDs) > 0 {
-		err := s.notifier.SendUpdate(ctx, pkgdomain.LinkUpdate{
-			ID:        int64(l.ID),
-			URL:       l.URL,
-			TgChatIDs: chatIDs,
-		})
-		if err != nil {
+		update := pkgdomain.LinkUpdate{
+			ID:          int64(l.ID),
+			URL:         l.URL,
+			Description: formatDescription(info),
+			TgChatIDs:   chatIDs,
+		}
+		if err = s.notifier.SendUpdate(ctx, update); err != nil {
 			return fmt.Errorf("send update: %w", err)
 		}
 	}
 
-	if err := s.links.UpdateTime(ctx, l.ID, updatedAt); err != nil {
+	if err = s.links.UpdateTime(ctx, l.ID, info.UpdatedAt); err != nil {
 		return fmt.Errorf("update time: %w", err)
 	}
 
 	return nil
+}
+
+// formatDescription builds a human-readable update message from UpdateInfo.
+func formatDescription(info *pkgdomain.UpdateInfo) string {
+	if info.Title == "" && info.Author == "" {
+		return "Обнаружены изменения"
+	}
+
+	var sb strings.Builder
+
+	if info.Title != "" {
+		sb.WriteString("📌 ")
+		sb.WriteString(info.Title)
+		sb.WriteString("\n")
+	}
+
+	if info.Author != "" {
+		sb.WriteString("👤 ")
+		sb.WriteString(info.Author)
+		if !info.CreatedAt.IsZero() {
+			sb.WriteString(" · ")
+			sb.WriteString(info.CreatedAt.Format("02 Jan 15:04"))
+		}
+		sb.WriteString("\n")
+	}
+
+	if info.Preview != "" {
+		sb.WriteString("\n")
+
+		const maxLen = 200
+		previewRunes := []rune(info.Preview)
+
+		if len(previewRunes) > maxLen {
+			sb.WriteString(string(previewRunes[:197]))
+			sb.WriteString("...")
+		} else {
+			sb.WriteString(info.Preview)
+		}
+	}
+
+	return sb.String()
 }
 
 func (s *scrapperService) findChecker(url string) LinkChecker {

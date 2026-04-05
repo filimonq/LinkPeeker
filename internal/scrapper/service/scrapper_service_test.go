@@ -13,18 +13,20 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/service"
 )
 
-// тут сценарий 7
-// Планировщик отправляет обновление только пользователям, которые следят за ссылкой
-// Другие пользователи не получают обновление
-
 type mockChecker struct {
 	url     string
 	updated time.Time
 }
 
 func (m *mockChecker) Supports(url string) bool { return url == m.url }
-func (m *mockChecker) GetLastUpdated(_ context.Context, _ string) (time.Time, error) {
-	return m.updated, nil
+func (m *mockChecker) GetUpdate(_ context.Context, _ string) (*pkgdomain.UpdateInfo, error) {
+	return &pkgdomain.UpdateInfo{
+		UpdatedAt: m.updated,
+		Title:     "Test title",
+		Author:    "testuser",
+		CreatedAt: m.updated,
+		Preview:   "Test preview",
+	}, nil
 }
 
 type mockNotifier struct {
@@ -39,11 +41,10 @@ func (m *mockNotifier) SendUpdate(_ context.Context, u pkgdomain.LinkUpdate) err
 func TestCheckUpdates_NotifiesOnlySubscribedChats(t *testing.T) {
 	chatRepo := memory.NewChatRepository()
 	linkRepo := memory.NewLinkRepository()
-
 	subsRepo := memory.NewSubscriptionRepository(linkRepo)
 	tagRepo := memory.NewTagRepository()
-
 	notifier := &mockNotifier{}
+
 	url := "https://github.com/user/repo"
 	checker := &mockChecker{url: url, updated: time.Now().Add(time.Second)}
 
@@ -68,6 +69,7 @@ func TestCheckUpdates_OtherChatsNotNotified(t *testing.T) {
 	subsRepo := memory.NewSubscriptionRepository(linkRepo)
 	tagRepo := memory.NewTagRepository()
 	notifier := &mockNotifier{}
+
 	url := "https://github.com/user/repo"
 	checker := &mockChecker{url: url, updated: time.Now().Add(time.Second)}
 
@@ -86,4 +88,57 @@ func TestCheckUpdates_OtherChatsNotNotified(t *testing.T) {
 			assert.NotEqual(t, int64(2), id)
 		}
 	}
+}
+
+func TestCheckUpdates_DescriptionContainsRequiredFields(t *testing.T) {
+	chatRepo := memory.NewChatRepository()
+	linkRepo := memory.NewLinkRepository()
+	subsRepo := memory.NewSubscriptionRepository(linkRepo)
+	tagRepo := memory.NewTagRepository()
+	notifier := &mockNotifier{}
+
+	url := "https://github.com/user/repo"
+	checker := &mockChecker{url: url, updated: time.Now().Add(time.Second)}
+
+	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 1, 10)
+	ctx := context.Background()
+
+	require.NoError(t, svc.RegisterChat(ctx, 1))
+	_, err := svc.AddLink(ctx, 1, url, nil)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.CheckUpdates(ctx))
+
+	require.Len(t, notifier.updates, 1)
+	desc := notifier.updates[0].Description
+	assert.Contains(t, desc, "Test title")
+	assert.Contains(t, desc, "testuser")
+	assert.Contains(t, desc, "Test preview")
+}
+
+func TestCheckUpdates_NoUpdateWhenNotChanged(t *testing.T) {
+	chatRepo := memory.NewChatRepository()
+	linkRepo := memory.NewLinkRepository()
+	subsRepo := memory.NewSubscriptionRepository(linkRepo)
+	tagRepo := memory.NewTagRepository()
+	notifier := &mockNotifier{}
+
+	url := "https://github.com/user/repo"
+	now := time.Now().Truncate(time.Second)
+
+	checker := &mockChecker{url: url, updated: now}
+
+	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 1, 10)
+	ctx := context.Background()
+
+	require.NoError(t, svc.RegisterChat(ctx, 1))
+	l, err := svc.AddLink(ctx, 1, url, nil)
+	require.NoError(t, err)
+
+	err = linkRepo.UpdateTime(ctx, l.ID, now)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.CheckUpdates(ctx))
+
+	assert.Empty(t, notifier.updates)
 }

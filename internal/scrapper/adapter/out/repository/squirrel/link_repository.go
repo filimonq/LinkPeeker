@@ -42,9 +42,10 @@ func (r *LinkRepository) GetOrCreate(ctx context.Context, url string) (*link.Lin
 
 // FindOldest returns the oldest links based on the last_checked_at field.
 func (r *LinkRepository) FindOldest(ctx context.Context, limit int) ([]*link.Link, error) {
-	query, args, err := psql.Select("id", "url", "updated_at").
-		From("links").
-		OrderBy("last_checked_at ASC").
+	query, args, err := psql.Select("l.id", "l.url", "l.updated_at").
+		From("links l").
+		Where("EXISTS (SELECT 1 FROM subscriptions s WHERE s.link_id = l.id)").
+		OrderBy("l.last_checked_at ASC").
 		Limit(uint64(limit)).
 		ToSql()
 	if err != nil {

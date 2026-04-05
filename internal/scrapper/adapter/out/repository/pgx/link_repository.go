@@ -39,9 +39,9 @@ func (r *LinkRepository) GetOrCreate(ctx context.Context, url string) (*link.Lin
 // FindOldest returns the oldest links.
 func (r *LinkRepository) FindOldest(ctx context.Context, limit int) ([]*link.Link, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id, url, updated_at FROM links
-		 ORDER BY last_checked_at ASC
-		 LIMIT $1`,
+		`SELECT id, url, updated_at FROM links l
+		WHERE EXISTS (SELECT 1 FROM subscriptions s WHERE s.link_id = l.id)
+		ORDER BY last_checked_at ASC LIMIT $1`,
 		limit,
 	)
 	if err != nil {
