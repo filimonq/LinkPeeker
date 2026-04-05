@@ -80,7 +80,7 @@ func (r *SubscriptionRepository) Remove(ctx context.Context, chatID int64, url s
 }
 
 // FindByChatID returns all links for a chat with pagination.
-func (r *SubscriptionRepository) FindByChatID(ctx context.Context, chatID int64, limit, offset int) ([]*link.Link, error) {
+func (r *SubscriptionRepository) FindByChatID(_ context.Context, chatID int64, limit, offset int) ([]*link.Link, error) {
 	r.mu.RLock()
 	linkIDs := r.byChat[chatID]
 	r.mu.RUnlock()

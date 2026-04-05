@@ -49,9 +49,9 @@ type TagRepository interface {
 type ScrapperService interface {
 	RegisterChat(ctx context.Context, chatID int64) error
 	DeleteChat(ctx context.Context, chatID int64) error
-	AddLink(ctx context.Context, chatID int64, url string, tags []string) (*link.LinkWithTags, error)
-	RemoveLink(ctx context.Context, chatID int64, url string) (*link.LinkWithTags, error)
-	ListLinks(ctx context.Context, chatID int64) ([]*link.LinkWithTags, error)
+	AddLink(ctx context.Context, chatID int64, url string, tags []string) (*link.WithTags, error)
+	RemoveLink(ctx context.Context, chatID int64, url string) (*link.WithTags, error)
+	ListLinks(ctx context.Context, chatID int64) ([]*link.WithTags, error)
 	CheckUpdates(ctx context.Context) error
 	AddTag(ctx context.Context, chatID int64, url string, tag string) error
 	RemoveTag(ctx context.Context, chatID int64, url string, tag string) error
@@ -126,7 +126,7 @@ func (s *scrapperService) DeleteChat(ctx context.Context, chatID int64) error {
 	return nil
 }
 
-func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string, tags []string) (*link.LinkWithTags, error) {
+func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string, tags []string) (*link.WithTags, error) {
 	exists, err := s.chats.Exists(ctx, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("check chat: %w", err)
@@ -158,10 +158,10 @@ func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string,
 		}
 	}
 
-	return &link.LinkWithTags{Link: l, Tags: tags}, nil
+	return &link.WithTags{Link: l, Tags: tags}, nil
 }
 
-func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url string) (*link.LinkWithTags, error) {
+func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url string) (*link.WithTags, error) {
 	exists, err := s.chats.Exists(ctx, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("check chat: %w", err)
@@ -187,10 +187,10 @@ func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url stri
 		return nil, fmt.Errorf("remove subscription: %w", err)
 	}
 
-	return &link.LinkWithTags{Link: removedLink, Tags: fetchedTags}, nil
+	return &link.WithTags{Link: removedLink, Tags: fetchedTags}, nil
 }
 
-func (s *scrapperService) ListLinks(ctx context.Context, chatID int64) ([]*link.LinkWithTags, error) {
+func (s *scrapperService) ListLinks(ctx context.Context, chatID int64) ([]*link.WithTags, error) {
 	exists, err := s.chats.Exists(ctx, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("check chat: %w", err)
@@ -204,99 +204,16 @@ func (s *scrapperService) ListLinks(ctx context.Context, chatID int64) ([]*link.
 		return nil, fmt.Errorf("list links: %w", err)
 	}
 
-	result := make([]*link.LinkWithTags, len(links))
+	result := make([]*link.WithTags, len(links))
 	for i, l := range links {
 		fetchedTags, tagsErr := s.tags.FindBySubscription(ctx, chatID, l.ID)
 		if tagsErr != nil {
 			return nil, fmt.Errorf("fetch tags for link %d: %w", l.ID, tagsErr)
 		}
-		result[i] = &link.LinkWithTags{Link: l, Tags: fetchedTags}
+		result[i] = &link.WithTags{Link: l, Tags: fetchedTags}
 	}
 
 	return result, nil
-}
-
-func (s *scrapperService) CheckUpdates(ctx context.Context) error {
-	links, err := s.links.FindOldest(ctx, s.batchSize)
-	if err != nil {
-		return fmt.Errorf("find oldest links: %w", err)
-	}
-	if len(links) == 0 {
-		return nil
-	}
-
-	var wg sync.WaitGroup
-	jobs := make(chan *link.Link, len(links))
-	failedURLs := make(chan string, len(links))
-
-	for i := 0; i < s.workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for l := range jobs {
-				if err := s.processSingleLink(ctx, l); err != nil {
-					slog.Error("failed to process link", "url", l.URL, "err", err)
-					failedURLs <- l.URL
-				}
-
-				if err := s.links.UpdateCheckedTime(ctx, l.ID); err != nil {
-					slog.Error("failed to update checked time", "url", l.URL, "err", err)
-				}
-			}
-		}()
-	}
-
-	for _, l := range links {
-		jobs <- l
-	}
-	close(jobs)
-	wg.Wait()
-	close(failedURLs)
-
-	if len(failedURLs) > 0 {
-		var urls []string
-		for u := range failedURLs {
-			urls = append(urls, u)
-		}
-		slog.Warn("batch processing finished with errors", "failed_count", len(urls), "failed_urls", urls)
-	}
-
-	return nil
-}
-
-func (s *scrapperService) processSingleLink(ctx context.Context, l *link.Link) error {
-	checker := s.findChecker(l.URL)
-	if checker == nil {
-		return nil
-	}
-
-	updatedAt, checkErr := checker.GetLastUpdated(ctx, l.URL)
-	if checkErr != nil {
-		return fmt.Errorf("get last updated: %w", checkErr)
-	}
-
-	if updatedAt.After(l.UpdatedAt) {
-		chatIDs, chatErr := s.subs.FindChatsByLinkID(ctx, l.ID)
-		if chatErr != nil {
-			return fmt.Errorf("find chats: %w", chatErr)
-		}
-
-		if len(chatIDs) > 0 {
-			if err := s.notifier.SendUpdate(ctx, pkgdomain.LinkUpdate{
-				ID:        int64(l.ID),
-				URL:       l.URL,
-				TgChatIDs: chatIDs,
-			}); err != nil {
-				return fmt.Errorf("send update: %w", err)
-			}
-		}
-
-		if err := s.links.UpdateTime(ctx, l.ID, updatedAt); err != nil {
-			return fmt.Errorf("update time: %w", err)
-		}
-	}
-
-	return nil
 }
 
 func (s *scrapperService) AddTag(ctx context.Context, chatID int64, url string, tag string) error {
@@ -331,6 +248,90 @@ func (s *scrapperService) ListTags(ctx context.Context, chatID int64, url string
 		return nil, fmt.Errorf("list tags: %w", err)
 	}
 	return tags, nil
+}
+
+func (s *scrapperService) CheckUpdates(ctx context.Context) error {
+	links, err := s.links.FindOldest(ctx, s.batchSize)
+	if err != nil {
+		return fmt.Errorf("find oldest links: %w", err)
+	}
+	if len(links) == 0 {
+		return nil
+	}
+
+	var wg sync.WaitGroup
+	jobs := make(chan *link.Link, len(links))
+	failedURLs := make(chan string, len(links))
+
+	for range s.workerCount {
+		wg.Go(func() { // ЭТО КРУТО
+			for l := range jobs {
+				if err = s.processSingleLink(ctx, l); err != nil {
+					slog.Error("failed to process link", "url", l.URL, "err", err)
+					failedURLs <- l.URL
+				}
+
+				if err = s.links.UpdateCheckedTime(ctx, l.ID); err != nil {
+					slog.Error("failed to update checked time", "url", l.URL, "err", err)
+				}
+			}
+		})
+	}
+
+	for _, l := range links {
+		jobs <- l
+	}
+	close(jobs)
+	wg.Wait()
+	close(failedURLs)
+
+	if len(failedURLs) > 0 {
+		var urls []string
+		for u := range failedURLs {
+			urls = append(urls, u)
+		}
+		slog.Warn("batch processing finished with errors", "failed_count", len(urls), "failed_urls", urls)
+	}
+
+	return nil
+}
+
+func (s *scrapperService) processSingleLink(ctx context.Context, l *link.Link) error {
+	checker := s.findChecker(l.URL)
+	if checker == nil {
+		return nil
+	}
+
+	updatedAt, checkErr := checker.GetLastUpdated(ctx, l.URL)
+	if checkErr != nil {
+		return fmt.Errorf("get last updated: %w", checkErr)
+	}
+
+	if !updatedAt.After(l.UpdatedAt) {
+		return nil
+	}
+
+	chatIDs, chatErr := s.subs.FindChatsByLinkID(ctx, l.ID)
+	if chatErr != nil {
+		return fmt.Errorf("find chats: %w", chatErr)
+	}
+
+	if len(chatIDs) > 0 {
+		err := s.notifier.SendUpdate(ctx, pkgdomain.LinkUpdate{
+			ID:        int64(l.ID),
+			URL:       l.URL,
+			TgChatIDs: chatIDs,
+		})
+		if err != nil {
+			return fmt.Errorf("send update: %w", err)
+		}
+	}
+
+	if err := s.links.UpdateTime(ctx, l.ID, updatedAt); err != nil {
+		return fmt.Errorf("update time: %w", err)
+	}
+
+	return nil
 }
 
 func (s *scrapperService) findChecker(url string) LinkChecker {

@@ -13,7 +13,7 @@ type Link struct {
 	UpdatedAt time.Time
 }
 
-type LinkWithTags struct {
+type WithTags struct {
 	*Link
 	Tags []string
 }

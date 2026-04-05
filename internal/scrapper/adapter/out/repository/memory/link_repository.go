@@ -63,10 +63,7 @@ func (r *LinkRepository) FindAll(_ context.Context, limit, offset int) ([]*link.
 	if offset >= len(all) {
 		return nil, nil
 	}
-	end := offset + limit
-	if end > len(all) {
-		end = len(all)
-	}
+	end := min(offset+limit, len(all))
 	return all[offset:end], nil
 }
 
@@ -88,13 +85,10 @@ func (r *LinkRepository) FindOldest(_ context.Context, limit int) ([]*link.Link,
 		return items[i].t.Before(items[j].t)
 	})
 
-	n := limit
-	if n > len(items) {
-		n = len(items)
-	}
+	n := min(limit, len(items))
 
 	result := make([]*link.Link, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		result = append(result, r.links[items[i].id])
 	}
 	return result, nil
