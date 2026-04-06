@@ -78,3 +78,34 @@ func (r *TagRepository) FindBySubscription(ctx context.Context, chatID int64, li
 	}
 	return tags, nil
 }
+
+// FindByChat returns all tags for all subscriptions of a chat grouped by link ID.
+func (r *TagRepository) FindByChat(ctx context.Context, chatID int64) (map[link.ID][]string, error) {
+	query, args, err := psql.Select("link_id", "tag").
+		From("link_tags").
+		Where(sq.Eq{"chat_id": chatID}).
+		ToSql()
+	if err != nil {
+		return nil, fmt.Errorf("build query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query tags: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[link.ID][]string)
+	for rows.Next() {
+		var linkID link.ID
+		var tag string
+		if err = rows.Scan(&linkID, &tag); err != nil {
+			return nil, fmt.Errorf("scan tag: %w", err)
+		}
+		result[linkID] = append(result[linkID], tag)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	return result, nil
+}

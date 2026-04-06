@@ -52,3 +52,17 @@ func (r *TagRepository) FindBySubscription(_ context.Context, chatID int64, link
 	defer r.mu.RUnlock()
 	return r.tags[tagKey{chatID, linkID}], nil
 }
+
+// FindByChat returns all tags for all subscriptions of a chat grouped by link ID.
+func (r *TagRepository) FindByChat(_ context.Context, chatID int64) (map[link.ID][]string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make(map[link.ID][]string)
+	for k, tags := range r.tags {
+		if k.chatID == chatID {
+			result[k.linkID] = append(result[k.linkID], tags...)
+		}
+	}
+	return result, nil
+}
