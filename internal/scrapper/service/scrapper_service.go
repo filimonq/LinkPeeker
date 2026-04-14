@@ -23,6 +23,7 @@ type scrapperService struct {
 	notifier    BotNotifier
 	workerCount int
 	batchSize   int
+	tx          Transactor
 }
 
 const defaultPageSize = 100
@@ -37,6 +38,7 @@ func NewScrapperService(
 	notifier BotNotifier,
 	workerCount int,
 	batchSize int,
+	tx Transactor,
 ) ScrapperService {
 	if workerCount <= 0 {
 		workerCount = defaultWorkerCount
@@ -54,6 +56,7 @@ func NewScrapperService(
 		notifier:    notifier,
 		workerCount: workerCount,
 		batchSize:   batchSize,
+		tx:          tx,
 	}
 }
 
@@ -93,14 +96,20 @@ func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string,
 		return nil, link.ErrAlreadyExists
 	}
 
-	if err = s.subs.Add(ctx, chatID, l.ID); err != nil {
-		return nil, fmt.Errorf("add subscription: %w", err)
-	}
-
-	for _, tag := range tags {
-		if err = s.tags.Add(ctx, chatID, l.ID, tag); err != nil {
-			return nil, fmt.Errorf("add tag: %w", err)
+	err = s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
+		if err = s.subs.Add(txCtx, chatID, l.ID); err != nil {
+			return fmt.Errorf("add subscription: %w", err)
 		}
+		for _, tag := range tags {
+			if err = s.tags.Add(txCtx, chatID, l.ID, tag); err != nil {
+				return fmt.Errorf("add tag: %w", err)
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("transaction failed: %w", err)
 	}
 
 	return &link.WithTags{Link: l, Tags: tags}, nil
@@ -224,14 +233,14 @@ func (s *scrapperService) CheckUpdates(ctx context.Context) error {
 	for range s.workerCount {
 		g.Go(func() error {
 			for l := range jobs {
-				err = s.processSingleLink(gCtx, l)
+				processErr := s.processSingleLink(gCtx, l)
 
 				if updateErr := s.links.UpdateCheckedTime(gCtx, l.ID); updateErr != nil {
 					slog.Error("failed to update checked time", "url", l.URL, "err", updateErr)
 				}
 
-				if err != nil {
-					slog.Error("failed to process link", "url", l.URL, "err", err)
+				if processErr != nil {
+					slog.Error("failed to process link", "url", l.URL, "err", processErr)
 					mu.Lock()
 					failedURLs = append(failedURLs, l.URL)
 					mu.Unlock()

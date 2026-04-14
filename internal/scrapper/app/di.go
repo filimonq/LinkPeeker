@@ -12,6 +12,8 @@ import (
 	botclient "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/bot"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/github"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/stackoverflow"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository"
+	memory "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository/memory"
 	pgxrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository/pgx"
 	squirrelrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository/squirrel"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/scheduler"
@@ -41,6 +43,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		linkRepo         service.LinkRepository
 		subscriptionRepo service.SubscriptionRepository
 		tagRepo          service.TagRepository
+		transactor       service.Transactor
 	)
 	switch cfg.AccessType {
 	case "squirrel":
@@ -48,11 +51,20 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		linkRepo = squirrelrepo.NewLinkRepository(db)
 		subscriptionRepo = squirrelrepo.NewSubscriptionRepository(db)
 		tagRepo = squirrelrepo.NewTagRepository(db)
-	default: // "pgx"
+		transactor = repository.NewTransactor(db)
+	case "pgx":
 		chatRepo = pgxrepo.NewChatRepository(db)
 		linkRepo = pgxrepo.NewLinkRepository(db)
 		subscriptionRepo = pgxrepo.NewSubscriptionRepository(db)
 		tagRepo = pgxrepo.NewTagRepository(db)
+		transactor = repository.NewTransactor(db)
+	default:
+		memLinkRepo := memory.NewLinkRepository()
+		chatRepo = memory.NewChatRepository()
+		linkRepo = memLinkRepo
+		subscriptionRepo = memory.NewSubscriptionRepository(memLinkRepo)
+		tagRepo = memory.NewTagRepository()
+		transactor = memory.NewTransactor()
 	}
 
 	botClient, err := botclient.NewClient(cfg.BotURL)
@@ -74,6 +86,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		botClient,
 		cfg.WorkerCount,
 		cfg.BatchSize,
+		transactor,
 	)
 
 	handler := httphandler.NewHandler(svc, logger)

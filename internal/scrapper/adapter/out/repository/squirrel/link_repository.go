@@ -9,6 +9,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
 )
 
@@ -24,6 +25,7 @@ func NewLinkRepository(db *pgxpool.Pool) *LinkRepository {
 
 // GetOrCreate inserts a link if not exists and returns it.
 func (r *LinkRepository) GetOrCreate(ctx context.Context, url string) (*link.Link, error) {
+	exec := repository.GetExecutor(ctx, r.db)
 	query, args, err := psql.Insert("links").
 		Columns("url").
 		Values(url).
@@ -34,7 +36,7 @@ func (r *LinkRepository) GetOrCreate(ctx context.Context, url string) (*link.Lin
 	}
 
 	l := &link.Link{}
-	if err = r.db.QueryRow(ctx, query, args...).Scan(&l.ID, &l.URL, &l.UpdatedAt); err != nil {
+	if err = exec.QueryRow(ctx, query, args...).Scan(&l.ID, &l.URL, &l.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("get or create link: %w", err)
 	}
 	return l, nil
@@ -42,6 +44,7 @@ func (r *LinkRepository) GetOrCreate(ctx context.Context, url string) (*link.Lin
 
 // FindOldest returns the oldest links based on the last_checked_at field.
 func (r *LinkRepository) FindOldest(ctx context.Context, limit int) ([]*link.Link, error) {
+	exec := repository.GetExecutor(ctx, r.db)
 	query, args, err := psql.Select("l.id", "l.url", "l.updated_at").
 		From("links l").
 		Where("EXISTS (SELECT 1 FROM subscriptions s WHERE s.link_id = l.id)").
@@ -52,7 +55,7 @@ func (r *LinkRepository) FindOldest(ctx context.Context, limit int) ([]*link.Lin
 		return nil, fmt.Errorf("build query: %w", err)
 	}
 
-	rows, err := r.db.Query(ctx, query, args...)
+	rows, err := exec.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query oldest links: %w", err)
 	}
@@ -70,6 +73,7 @@ func (r *LinkRepository) FindOldest(ctx context.Context, limit int) ([]*link.Lin
 }
 
 func (r *LinkRepository) UpdateCheckedTime(ctx context.Context, id link.ID) error {
+	exec := repository.GetExecutor(ctx, r.db)
 	query, args, err := psql.Update("links").
 		Set("last_checked_at", sq.Expr("NOW()")).
 		Where(sq.Eq{"id": id}).
@@ -78,13 +82,14 @@ func (r *LinkRepository) UpdateCheckedTime(ctx context.Context, id link.ID) erro
 		return fmt.Errorf("build query: %w", err)
 	}
 
-	if _, err = r.db.Exec(ctx, query, args...); err != nil {
+	if _, err = exec.Exec(ctx, query, args...); err != nil {
 		return fmt.Errorf("update checked time: %w", err)
 	}
 	return nil
 }
 
 func (r *LinkRepository) UpdateTime(ctx context.Context, id link.ID, updatedAt time.Time) error {
+	exec := repository.GetExecutor(ctx, r.db)
 	query, args, err := psql.Update("links").
 		Set("updated_at", updatedAt).
 		Where(sq.Eq{"id": id}).
@@ -93,7 +98,7 @@ func (r *LinkRepository) UpdateTime(ctx context.Context, id link.ID, updatedAt t
 		return fmt.Errorf("build query: %w", err)
 	}
 
-	if _, err = r.db.Exec(ctx, query, args...); err != nil {
+	if _, err = exec.Exec(ctx, query, args...); err != nil {
 		return fmt.Errorf("update link time: %w", err)
 	}
 	return nil
@@ -101,6 +106,7 @@ func (r *LinkRepository) UpdateTime(ctx context.Context, id link.ID, updatedAt t
 
 // FindByURL returns a link by url.
 func (r *LinkRepository) FindByURL(ctx context.Context, url string) (*link.Link, error) {
+	exec := repository.GetExecutor(ctx, r.db)
 	query, args, err := psql.Select("id", "url", "updated_at").
 		From("links").
 		Where(sq.Eq{"url": url}).
@@ -110,7 +116,7 @@ func (r *LinkRepository) FindByURL(ctx context.Context, url string) (*link.Link,
 	}
 
 	l := &link.Link{}
-	if err = r.db.QueryRow(ctx, query, args...).Scan(&l.ID, &l.URL, &l.UpdatedAt); err != nil {
+	if err = exec.QueryRow(ctx, query, args...).Scan(&l.ID, &l.URL, &l.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, link.ErrNotFound
 		}

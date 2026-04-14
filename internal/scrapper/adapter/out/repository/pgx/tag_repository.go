@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
 )
 
@@ -20,7 +21,8 @@ func NewTagRepository(db *pgxpool.Pool) *TagRepository {
 
 // Add adds a tag to a subscription.
 func (r *TagRepository) Add(ctx context.Context, chatID int64, linkID link.ID, tag string) error {
-	_, err := r.db.Exec(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	_, err := exec.Exec(ctx,
 		`INSERT INTO link_tags (chat_id, link_id, tag) VALUES ($1, $2, $3)
 		 ON CONFLICT DO NOTHING`,
 		chatID, linkID, tag,
@@ -33,7 +35,8 @@ func (r *TagRepository) Add(ctx context.Context, chatID int64, linkID link.ID, t
 
 // Remove removes a tag from a subscription.
 func (r *TagRepository) Remove(ctx context.Context, chatID int64, linkID link.ID, tag string) error {
-	_, err := r.db.Exec(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	_, err := exec.Exec(ctx,
 		`DELETE FROM link_tags WHERE chat_id = $1 AND link_id = $2 AND tag = $3`,
 		chatID, linkID, tag,
 	)
@@ -45,7 +48,8 @@ func (r *TagRepository) Remove(ctx context.Context, chatID int64, linkID link.ID
 
 // FindBySubscription returns all tags for a subscription.
 func (r *TagRepository) FindBySubscription(ctx context.Context, chatID int64, linkID link.ID) ([]string, error) {
-	rows, err := r.db.Query(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	rows, err := exec.Query(ctx,
 		`SELECT tag FROM link_tags WHERE chat_id = $1 AND link_id = $2`,
 		chatID, linkID,
 	)
@@ -70,7 +74,8 @@ func (r *TagRepository) FindBySubscription(ctx context.Context, chatID int64, li
 
 // FindByChat returns all tags for all subscriptions of a chat grouped by link ID.
 func (r *TagRepository) FindByChat(ctx context.Context, chatID int64) (map[link.ID][]string, error) {
-	rows, err := r.db.Query(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	rows, err := exec.Query(ctx,
 		`SELECT link_id, tag FROM link_tags WHERE chat_id = $1`,
 		chatID,
 	)

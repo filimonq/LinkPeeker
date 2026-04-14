@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
 )
 
@@ -22,7 +23,8 @@ func NewSubscriptionRepository(db *pgxpool.Pool) *SubscriptionRepository {
 
 // Add adds a subscription in a transaction.
 func (r *SubscriptionRepository) Add(ctx context.Context, chatID int64, linkID link.ID) error {
-	_, err := r.db.Exec(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	_, err := exec.Exec(ctx,
 		`INSERT INTO subscriptions (chat_id, link_id) VALUES ($1, $2)`,
 		chatID, linkID,
 	)
@@ -34,8 +36,9 @@ func (r *SubscriptionRepository) Add(ctx context.Context, chatID int64, linkID l
 
 // Remove removes a subscription by chatID and url.
 func (r *SubscriptionRepository) Remove(ctx context.Context, chatID int64, url string) (*link.Link, error) {
+	exec := repository.GetExecutor(ctx, r.db)
 	l := &link.Link{}
-	err := r.db.QueryRow(ctx,
+	err := exec.QueryRow(ctx,
 		`DELETE FROM subscriptions s
 		 USING links l
 		 WHERE s.link_id = l.id AND s.chat_id = $1 AND l.url = $2
@@ -53,7 +56,8 @@ func (r *SubscriptionRepository) Remove(ctx context.Context, chatID int64, url s
 
 // FindByChatID returns all links for a chat with pagination.
 func (r *SubscriptionRepository) FindByChatID(ctx context.Context, chatID int64, limit, offset int) ([]*link.Link, error) {
-	rows, err := r.db.Query(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	rows, err := exec.Query(ctx,
 		`SELECT l.id, l.url, l.updated_at
 		 FROM links l
 		 JOIN subscriptions s ON s.link_id = l.id
@@ -82,7 +86,8 @@ func (r *SubscriptionRepository) FindByChatID(ctx context.Context, chatID int64,
 
 // FindChatsByLinkID returns all chat IDs subscribed to a link.
 func (r *SubscriptionRepository) FindChatsByLinkID(ctx context.Context, linkID link.ID) ([]int64, error) {
-	rows, err := r.db.Query(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	rows, err := exec.Query(ctx,
 		`SELECT chat_id FROM subscriptions WHERE link_id = $1`,
 		linkID,
 	)
@@ -107,8 +112,9 @@ func (r *SubscriptionRepository) FindChatsByLinkID(ctx context.Context, linkID l
 
 // Exists checks if a subscription exists.
 func (r *SubscriptionRepository) Exists(ctx context.Context, chatID int64, url string) (bool, error) {
+	exec := repository.GetExecutor(ctx, r.db)
 	var exists bool
-	err := r.db.QueryRow(ctx,
+	err := exec.QueryRow(ctx,
 		`SELECT EXISTS(
 			SELECT 1 FROM subscriptions s
 			JOIN links l ON l.id = s.link_id

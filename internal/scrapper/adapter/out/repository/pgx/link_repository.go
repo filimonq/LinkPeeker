@@ -8,10 +8,11 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
 )
 
-// LinkRepository is a PostgreSQL implementation 	using raw SQL.
+// LinkRepository is a PostgreSQL implementation using raw SQL.
 type LinkRepository struct {
 	db *pgxpool.Pool
 }
@@ -23,8 +24,9 @@ func NewLinkRepository(db *pgxpool.Pool) *LinkRepository {
 
 // GetOrCreate inserts a link if not exists and returns it.
 func (r *LinkRepository) GetOrCreate(ctx context.Context, url string) (*link.Link, error) {
+	exec := repository.GetExecutor(ctx, r.db)
 	l := &link.Link{}
-	err := r.db.QueryRow(ctx,
+	err := exec.QueryRow(ctx,
 		`INSERT INTO links (url) VALUES ($1)
 		 ON CONFLICT (url) DO UPDATE SET url = EXCLUDED.url
 		 RETURNING id, url, updated_at`,
@@ -38,7 +40,8 @@ func (r *LinkRepository) GetOrCreate(ctx context.Context, url string) (*link.Lin
 
 // FindOldest returns the oldest links.
 func (r *LinkRepository) FindOldest(ctx context.Context, limit int) ([]*link.Link, error) {
-	rows, err := r.db.Query(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	rows, err := exec.Query(ctx,
 		`SELECT id, url, updated_at FROM links l
 		WHERE EXISTS (SELECT 1 FROM subscriptions s WHERE s.link_id = l.id)
 		ORDER BY last_checked_at ASC LIMIT $1`,
@@ -64,7 +67,8 @@ func (r *LinkRepository) FindOldest(ctx context.Context, limit int) ([]*link.Lin
 }
 
 func (r *LinkRepository) UpdateCheckedTime(ctx context.Context, id link.ID) error {
-	_, err := r.db.Exec(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	_, err := exec.Exec(ctx,
 		`UPDATE links SET last_checked_at = NOW() WHERE id = $1`,
 		id,
 	)
@@ -76,7 +80,8 @@ func (r *LinkRepository) UpdateCheckedTime(ctx context.Context, id link.ID) erro
 
 // UpdateTime updates the updated_at field of a link.
 func (r *LinkRepository) UpdateTime(ctx context.Context, id link.ID, updatedAt time.Time) error {
-	_, err := r.db.Exec(ctx,
+	exec := repository.GetExecutor(ctx, r.db)
+	_, err := exec.Exec(ctx,
 		`UPDATE links SET updated_at = $1 WHERE id = $2`,
 		updatedAt, id,
 	)
@@ -88,8 +93,9 @@ func (r *LinkRepository) UpdateTime(ctx context.Context, id link.ID, updatedAt t
 
 // FindByURL returns a link by url.
 func (r *LinkRepository) FindByURL(ctx context.Context, url string) (*link.Link, error) {
+	exec := repository.GetExecutor(ctx, r.db)
 	l := &link.Link{}
-	err := r.db.QueryRow(ctx,
+	err := exec.QueryRow(ctx,
 		`SELECT id, url, updated_at FROM links WHERE url = $1`,
 		url,
 	).Scan(&l.ID, &l.URL, &l.UpdatedAt)

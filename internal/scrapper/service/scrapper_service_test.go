@@ -38,6 +38,12 @@ func (m *mockNotifier) SendUpdate(_ context.Context, u pkgdomain.LinkUpdate) err
 	return nil
 }
 
+type mockTransactor struct{}
+
+func (m *mockTransactor) WithinTransaction(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
 func TestCheckUpdates_NotifiesOnlySubscribedChats(t *testing.T) {
 	chatRepo := memory.NewChatRepository()
 	linkRepo := memory.NewLinkRepository()
@@ -48,7 +54,7 @@ func TestCheckUpdates_NotifiesOnlySubscribedChats(t *testing.T) {
 	url := "https://github.com/user/repo"
 	checker := &mockChecker{url: url, updated: time.Now().Add(time.Second)}
 
-	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 4, 10)
+	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 4, 10, &mockTransactor{})
 	ctx := context.Background()
 
 	require.NoError(t, svc.RegisterChat(ctx, 1))
@@ -73,7 +79,7 @@ func TestCheckUpdates_OtherChatsNotNotified(t *testing.T) {
 	url := "https://github.com/user/repo"
 	checker := &mockChecker{url: url, updated: time.Now().Add(time.Second)}
 
-	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 4, 10)
+	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 4, 10, &mockTransactor{})
 	ctx := context.Background()
 
 	require.NoError(t, svc.RegisterChat(ctx, 1))
@@ -100,7 +106,7 @@ func TestCheckUpdates_DescriptionContainsRequiredFields(t *testing.T) {
 	url := "https://github.com/user/repo"
 	checker := &mockChecker{url: url, updated: time.Now().Add(time.Second)}
 
-	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 1, 10)
+	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 1, 10, &mockTransactor{})
 	ctx := context.Background()
 
 	require.NoError(t, svc.RegisterChat(ctx, 1))
@@ -128,7 +134,7 @@ func TestCheckUpdates_NoUpdateWhenNotChanged(t *testing.T) {
 
 	checker := &mockChecker{url: url, updated: now}
 
-	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 1, 10)
+	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 1, 10, &mockTransactor{})
 	ctx := context.Background()
 
 	require.NoError(t, svc.RegisterChat(ctx, 1))

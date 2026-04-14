@@ -66,3 +66,7 @@ type LinkChecker interface {
 type BotNotifier interface {
 	SendUpdate(ctx context.Context, update pkgdomain.LinkUpdate) error
 }
+
+type Transactor interface {
+	WithinTransaction(ctx context.Context, fn func(ctx context.Context) error) error
+}
