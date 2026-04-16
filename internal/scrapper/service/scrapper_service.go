@@ -127,19 +127,19 @@ func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url stri
 	var result *link.WithTags
 
 	err = s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
-		l, err := s.links.FindByURL(txCtx, url)
-		if err != nil {
-			return fmt.Errorf("find link: %w", err)
+		l, tErr := s.links.FindByURL(txCtx, url)
+		if tErr != nil {
+			return fmt.Errorf("find link: %w", tErr)
 		}
 
-		fetchedTags, err := s.tags.FindBySubscription(txCtx, chatID, l.ID)
-		if err != nil {
-			return fmt.Errorf("fetch tags: %w", err)
+		fetchedTags, tErr := s.tags.FindBySubscription(txCtx, chatID, l.ID)
+		if tErr != nil {
+			return fmt.Errorf("fetch tags: %w", tErr)
 		}
 
-		removedLink, err := s.subs.Remove(txCtx, chatID, url)
-		if err != nil {
-			return fmt.Errorf("remove subscription: %w", err)
+		removedLink, tErr := s.subs.Remove(txCtx, chatID, url)
+		if tErr != nil {
+			return fmt.Errorf("remove subscription: %w", tErr)
 		}
 
 		result = &link.WithTags{Link: removedLink, Tags: fetchedTags}
