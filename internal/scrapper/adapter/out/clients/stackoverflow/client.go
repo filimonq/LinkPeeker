@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -96,6 +97,7 @@ func (c *Client) GetUpdate(ctx context.Context, url string) (*pkgdomain.UpdateIn
 	g.Go(func() error {
 		a, fetchErr := c.fetchLatestAnswer(gCtx, questionID)
 		if fetchErr != nil {
+			slog.Warn("failed to fetch latest answer", "question_id", questionID, "err", fetchErr)
 			return nil
 		}
 		mu.Lock()
@@ -107,6 +109,7 @@ func (c *Client) GetUpdate(ctx context.Context, url string) (*pkgdomain.UpdateIn
 	g.Go(func() error {
 		cmt, fetchErr := c.fetchLatestComment(gCtx, questionID)
 		if fetchErr != nil {
+			slog.Warn("failed to fetch latest comment", "question_id", questionID, "err", fetchErr)
 			return nil
 		}
 		mu.Lock()

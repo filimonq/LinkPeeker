@@ -124,22 +124,33 @@ func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url stri
 		return nil, chat.ErrNotFound
 	}
 
-	l, err := s.links.FindByURL(ctx, url)
+	var result *link.WithTags
+
+	err = s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
+		l, err := s.links.FindByURL(txCtx, url)
+		if err != nil {
+			return fmt.Errorf("find link: %w", err)
+		}
+
+		fetchedTags, err := s.tags.FindBySubscription(txCtx, chatID, l.ID)
+		if err != nil {
+			return fmt.Errorf("fetch tags: %w", err)
+		}
+
+		removedLink, err := s.subs.Remove(txCtx, chatID, url)
+		if err != nil {
+			return fmt.Errorf("remove subscription: %w", err)
+		}
+
+		result = &link.WithTags{Link: removedLink, Tags: fetchedTags}
+		return nil
+	})
+
 	if err != nil {
-		return nil, fmt.Errorf("find link: %w", err)
+		return nil, fmt.Errorf("transaction failed: %w", err)
 	}
 
-	fetchedTags, err := s.tags.FindBySubscription(ctx, chatID, l.ID)
-	if err != nil {
-		return nil, fmt.Errorf("fetch tags: %w", err)
-	}
-
-	removedLink, err := s.subs.Remove(ctx, chatID, url)
-	if err != nil {
-		return nil, fmt.Errorf("remove subscription: %w", err)
-	}
-
-	return &link.WithTags{Link: removedLink, Tags: fetchedTags}, nil
+	return result, nil
 }
 
 func (s *scrapperService) ListLinks(ctx context.Context, chatID int64) ([]*link.WithTags, error) {
