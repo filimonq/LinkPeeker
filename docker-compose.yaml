@@ -15,6 +15,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    
+  bot:
+    build:
+      context: .
+      dockerfile: build/bot/Dockerfile
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scrapper:
+    build:
+      context: .
+      dockerfile: build/scrapper/Dockerfile
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   pgdata:

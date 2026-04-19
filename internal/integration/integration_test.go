@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -178,6 +179,10 @@ func (s *E2ESuite) startDockerNetwork() (*testcontainers.DockerNetwork, string) 
 }
 
 func (s *E2ESuite) startScrapper(netName string) string {
+	accessType := os.Getenv("ACCESS_TYPE")
+	if accessType == "" {
+		accessType = "pgx"
+	}
 	c, err := testcontainers.GenericContainer(s.ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			FromDockerfile: testcontainers.FromDockerfile{
@@ -193,7 +198,7 @@ func (s *E2ESuite) startScrapper(netName string) string {
 				"SCRAPPER_GRPC_PORT":        "50051",
 				"SCHEDULE_INTERVAL_SECONDS": "3600",
 				"DATABASE_URL":              "postgres://postgres:postgres@postgres:5432/linktracker?sslmode=disable",
-				"ACCESS_TYPE":               "pgx",
+				"ACCESS_TYPE":               accessType,
 			},
 			WaitingFor: wait.ForListeningPort("8081/tcp").WithStartupTimeout(5 * time.Minute),
 		},
@@ -214,6 +219,10 @@ func (s *E2ESuite) startScrapper(netName string) string {
 }
 
 func (s *E2ESuite) startBot(netName, gateway, mockPort string) string {
+	accessType := os.Getenv("ACCESS_TYPE")
+	if accessType == "" {
+		accessType = "pgx"
+	}
 	c, err := testcontainers.GenericContainer(s.ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			FromDockerfile: testcontainers.FromDockerfile{
@@ -229,7 +238,7 @@ func (s *E2ESuite) startBot(netName, gateway, mockPort string) string {
 				"SCRAPPER_URL":     "scrapper:50051",
 				"BOT_PORT":         "8080",
 				"DATABASE_URL":     "postgres://postgres:postgres@postgres:5432/linktracker?sslmode=disable",
-				"ACCESS_TYPE":      "pgx",
+				"ACCESS_TYPE":      accessType,
 			},
 			WaitingFor: wait.ForListeningPort("8080/tcp").WithStartupTimeout(5 * time.Minute),
 		},

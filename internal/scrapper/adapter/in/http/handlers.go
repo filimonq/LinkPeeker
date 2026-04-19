@@ -178,7 +178,7 @@ func (h *Handler) writeError(w http.ResponseWriter, status int, description stri
 	})
 }
 
-func toLinkResponse(l *link.Link) LinkResponse {
+func toLinkResponse(l *link.WithTags) LinkResponse {
 	return LinkResponse{
 		ID:   int64(l.ID),
 		URL:  l.URL,

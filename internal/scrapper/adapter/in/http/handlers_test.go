@@ -2,6 +2,7 @@ package scrapperhttp_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -17,11 +18,18 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/service"
 )
 
+type mockTransactor struct{}
+
+func (m *mockTransactor) WithinTransaction(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
 func newTestScrapperServer() *httptest.Server {
 	chatRepo := memory.NewChatRepository()
 	linkRepo := memory.NewLinkRepository()
 	tagRepo := memory.NewTagRepository()
-	svc := service.NewScrapperService(chatRepo, linkRepo, tagRepo, nil, nil)
+	transactor := &mockTransactor{}
+	svc := service.NewScrapperService(chatRepo, linkRepo, memory.NewSubscriptionRepository(linkRepo), tagRepo, nil, nil, 4, 10, transactor)
 	handler := scrapperhttp.NewHandler(svc, slog.Default())
 	server := scrapperhttp.NewServer(":0", handler)
 	return httptest.NewServer(server.Handler())

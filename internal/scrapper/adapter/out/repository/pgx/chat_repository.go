@@ -21,7 +21,8 @@ func NewChatRepository(db *pgxpool.Pool) *ChatRepository {
 
 // Add inserts a new chat.
 func (r *ChatRepository) Add(ctx context.Context, id int64) error {
-	_, err := r.db.Exec(ctx, "INSERT INTO chats (chat_id) VALUES ($1)", id)
+	exec := repository.GetExecutor(ctx, r.db)
+	_, err := exec.Exec(ctx, "INSERT INTO chats (chat_id) VALUES ($1)", id)
 	if err != nil {
 		if repository.IsUniqueViolation(err) {
 			return chat.ErrAlreadyExists
@@ -33,7 +34,8 @@ func (r *ChatRepository) Add(ctx context.Context, id int64) error {
 
 // Remove deletes a chat by id.
 func (r *ChatRepository) Remove(ctx context.Context, id int64) error {
-	tag, err := r.db.Exec(ctx, "DELETE FROM chats WHERE chat_id = $1", id)
+	exec := repository.GetExecutor(ctx, r.db)
+	tag, err := exec.Exec(ctx, "DELETE FROM chats WHERE chat_id = $1", id)
 	if err != nil {
 		return fmt.Errorf("delete chat: %w", err)
 	}
@@ -45,8 +47,9 @@ func (r *ChatRepository) Remove(ctx context.Context, id int64) error {
 
 // Exists checks if a chat exists.
 func (r *ChatRepository) Exists(ctx context.Context, id int64) (bool, error) {
+	exec := repository.GetExecutor(ctx, r.db)
 	var exists bool
-	err := r.db.QueryRow(ctx,
+	err := exec.QueryRow(ctx,
 		"SELECT EXISTS(SELECT 1 FROM chats WHERE chat_id = $1)", id,
 	).Scan(&exists)
 	if err != nil {

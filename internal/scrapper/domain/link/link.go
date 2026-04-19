@@ -10,8 +10,10 @@ type ID int64
 type Link struct {
 	ID        ID
 	URL       string
-	Tags      []string
-	ChatID    int64
-	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+type WithTags struct {
+	*Link
+	Tags []string
 }

@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -10,66 +11,44 @@ import (
 
 // LinkRepository is an in-memory implementation of service.LinkRepository.
 type LinkRepository struct {
-	mu    sync.RWMutex
-	links map[int64][]*link.Link
-	seq   int64
+	mu          sync.RWMutex
+	links       map[link.ID]*link.Link
+	linksByURL  map[string]link.ID
+	lastChecked map[link.ID]time.Time
+	seq         int64
 }
 
 // NewLinkRepository creates a new in-memory link repository.
 func NewLinkRepository() *LinkRepository {
 	return &LinkRepository{
-		links: make(map[int64][]*link.Link),
+		links:       make(map[link.ID]*link.Link),
+		linksByURL:  make(map[string]link.ID),
+		lastChecked: make(map[link.ID]time.Time),
 	}
 }
 
-// Add adds a link to the repository.
-func (r *LinkRepository) Add(_ context.Context, l *link.Link) error {
+// GetOrCreate returns existing link or creates a new one.
+func (r *LinkRepository) GetOrCreate(_ context.Context, url string) (*link.Link, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, existing := range r.links[l.ChatID] {
-		if existing.URL == l.URL {
-			return link.ErrAlreadyExists
-		}
+	if id, ok := r.linksByURL[url]; ok {
+		return r.links[id], nil
 	}
 
 	r.seq++
-	l.ID = link.ID(r.seq)
-	l.CreatedAt = time.Now()
-	l.UpdatedAt = time.Now()
-	r.links[l.ChatID] = append(r.links[l.ChatID], l)
-	return nil
-}
-
-// Remove removes a link from the repository.
-func (r *LinkRepository) Remove(_ context.Context, chatID int64, url string) (*link.Link, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	links := r.links[chatID]
-	for i, l := range links {
-		if l.URL == url {
-			r.links[chatID] = append(links[:i], links[i+1:]...)
-			return l, nil
-		}
+	id := link.ID(r.seq)
+	l := &link.Link{
+		ID:        id,
+		URL:       url,
+		UpdatedAt: time.Unix(0, 0),
 	}
-	return nil, link.ErrNotFound
-}
 
-// FindByChatID returns links for a given chat ID with pagination.
-func (r *LinkRepository) FindByChatID(_ context.Context, chatID int64, limit, offset int) ([]*link.Link, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.links[id] = l
+	r.linksByURL[url] = id
+	r.lastChecked[id] = time.Unix(0, 0)
 
-	all := r.links[chatID]
-	if offset >= len(all) {
-		return nil, nil
-	}
-	end := offset + limit
-	if end > len(all) {
-		end = len(all)
-	}
-	return all[offset:end], nil
+	return l, nil
 }
 
 // FindAll returns all links with pagination.
@@ -77,58 +56,69 @@ func (r *LinkRepository) FindAll(_ context.Context, limit, offset int) ([]*link.
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var all []*link.Link
-	for _, links := range r.links {
-		all = append(all, links...)
+	all := make([]*link.Link, 0, len(r.links))
+	for _, l := range r.links {
+		all = append(all, l)
 	}
 	if offset >= len(all) {
 		return nil, nil
 	}
-	end := offset + limit
-	if end > len(all) {
-		end = len(all)
-	}
+	end := min(offset+limit, len(all))
 	return all[offset:end], nil
 }
 
-// FindByURL returns a link by chatID and url.
-func (r *LinkRepository) FindByURL(_ context.Context, chatID int64, url string) (*link.Link, error) {
+func (r *LinkRepository) FindOldest(_ context.Context, limit int) ([]*link.Link, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	for _, l := range r.links[chatID] {
-		if l.URL == url {
-			return l, nil
-		}
+	type item struct {
+		id link.ID
+		t  time.Time
 	}
-	return nil, link.ErrNotFound
+
+	var items []item
+	for id, t := range r.lastChecked {
+		items = append(items, item{id, t})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].t.Before(items[j].t)
+	})
+
+	n := min(limit, len(items))
+
+	result := make([]*link.Link, 0, n)
+	for i := range n {
+		result = append(result, r.links[items[i].id])
+	}
+	return result, nil
 }
 
-// Exists checks if a link exists in the repository.
-func (r *LinkRepository) Exists(_ context.Context, chatID int64, url string) (bool, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+func (r *LinkRepository) UpdateCheckedTime(_ context.Context, id link.ID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	for _, l := range r.links[chatID] {
-		if l.URL == url {
-			return true, nil
-		}
-	}
-	return false, nil
+	r.lastChecked[id] = time.Now()
+	return nil
 }
 
-// UpdateTime updates the UpdatedAt field of a link.
 func (r *LinkRepository) UpdateTime(_ context.Context, id link.ID, updatedAt time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, links := range r.links {
-		for _, l := range links {
-			if l.ID == id {
-				l.UpdatedAt = updatedAt
-				return nil
-			}
-		}
+	if l, ok := r.links[id]; ok {
+		l.UpdatedAt = updatedAt
 	}
-	return link.ErrNotFound
+	return nil
+}
+
+func (r *LinkRepository) FindByURL(_ context.Context, url string) (*link.Link, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	id, ok := r.linksByURL[url]
+	if !ok {
+		return nil, link.ErrNotFound
+	}
+	return r.links[id], nil
 }
