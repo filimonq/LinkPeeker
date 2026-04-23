@@ -4,10 +4,24 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
 )
+
+type NotifierType string
+
+const (
+	NotifierHTTP  NotifierType = "http"
+	NotifierKafka NotifierType = "kafka"
+)
+
+// KafkaConfig holds Kafka connection configuration.
+type KafkaConfig struct {
+	Brokers []string
+	Topic   string
+}
 
 // Config holds scrapper application configuration.
 type Config struct {
@@ -20,6 +34,8 @@ type Config struct {
 	AccessType       string // "sql" or "squirrel"
 	WorkerCount      int
 	BatchSize        int
+	NotifierType     NotifierType
+	Kafka            KafkaConfig
 }
 
 // Load reads configuration from environment variables.
@@ -72,6 +88,21 @@ func Load() (*Config, error) {
 		}
 	}
 
+	notifierType := NotifierKafka
+	if nt := os.Getenv("NOTIFIER_TYPE"); nt == string(NotifierHTTP) {
+		notifierType = NotifierHTTP
+	}
+
+	kafkaBrokers := []string{"kafka-1:9092", "kafka-2:9092", "kafka-3:9092"}
+	if brokersStr := os.Getenv("KAFKA_BROKERS"); brokersStr != "" {
+		kafkaBrokers = strings.Split(brokersStr, ",")
+	}
+
+	kafkaTopic := os.Getenv("KAFKA_TOPIC")
+	if kafkaTopic == "" {
+		kafkaTopic = "link-updates"
+	}
+
 	return &Config{
 		BotURL:           botURL,
 		GitHubToken:      os.Getenv("GITHUB_TOKEN"),
@@ -82,5 +113,10 @@ func Load() (*Config, error) {
 		AccessType:       accessType,
 		WorkerCount:      workerCount,
 		BatchSize:        batchSize,
+		NotifierType:     notifierType,
+		Kafka: KafkaConfig{
+			Brokers: kafkaBrokers,
+			Topic:   kafkaTopic,
+		},
 	}, nil
 }

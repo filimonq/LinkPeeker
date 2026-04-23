@@ -45,9 +45,17 @@ func (a *App) Run() error {
 		}
 	}()
 
+	go func() {
+		container.KafkaConsumer.Start(ctx)
+	}()
+
 	a.logger.Info("bot is starting")
 	container.Bot.Start(ctx)
 	a.logger.Info("bot stopped")
+
+	if err = container.KafkaConsumer.Close(); err != nil {
+		a.logger.Error("kafka consumer close error", slog.String("error", err.Error()))
+	}
 
 	if err = container.HTTPServer.Shutdown(context.Background()); err != nil {
 		a.logger.Error("http server shutdown error", slog.String("error", err.Error()))

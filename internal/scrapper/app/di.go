@@ -12,6 +12,7 @@ import (
 	botclient "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/bot"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/github"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/stackoverflow"
+	kafkanotifier "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/kafka"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository"
 	memory "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository/memory"
 	pgxrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository/pgx"
@@ -38,38 +39,20 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
-	var (
-		chatRepo         service.ChatRepository
-		linkRepo         service.LinkRepository
-		subscriptionRepo service.SubscriptionRepository
-		tagRepo          service.TagRepository
-		transactor       service.Transactor
-	)
-	switch cfg.AccessType {
-	case "squirrel":
-		chatRepo = squirrelrepo.NewChatRepository(db)
-		linkRepo = squirrelrepo.NewLinkRepository(db)
-		subscriptionRepo = squirrelrepo.NewSubscriptionRepository(db)
-		tagRepo = squirrelrepo.NewTagRepository(db)
-		transactor = repository.NewTransactor(db)
-	case "pgx":
-		chatRepo = pgxrepo.NewChatRepository(db)
-		linkRepo = pgxrepo.NewLinkRepository(db)
-		subscriptionRepo = pgxrepo.NewSubscriptionRepository(db)
-		tagRepo = pgxrepo.NewTagRepository(db)
-		transactor = repository.NewTransactor(db)
-	default:
-		memLinkRepo := memory.NewLinkRepository()
-		chatRepo = memory.NewChatRepository()
-		linkRepo = memLinkRepo
-		subscriptionRepo = memory.NewSubscriptionRepository(memLinkRepo)
-		tagRepo = memory.NewTagRepository()
-		transactor = memory.NewTransactor()
-	}
+	chatRepo, linkRepo, subscriptionRepo, tagRepo, transactor := buildRepos(cfg, db)
 
-	botClient, err := botclient.NewClient(cfg.BotURL)
-	if err != nil {
-		return nil, fmt.Errorf("create bot client: %w", err)
+	var notifier service.BotNotifier
+	switch cfg.NotifierType {
+	case NotifierKafka:
+		producer := kafkanotifier.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
+		notifier = producer
+		logger.Info("using kafka notifier", slog.String("topic", cfg.Kafka.Topic))
+	case NotifierHTTP:
+		notifier, err = botclient.NewClient(cfg.BotURL)
+		if err != nil {
+			return nil, fmt.Errorf("create bot client: %w", err)
+		}
+		logger.Info("using http notifier", slog.String("bot_url", cfg.BotURL))
 	}
 
 	checkers := []service.LinkChecker{
@@ -83,7 +66,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		subscriptionRepo,
 		tagRepo,
 		checkers,
-		botClient,
+		notifier,
 		cfg.WorkerCount,
 		cfg.BatchSize,
 		transactor,
@@ -103,4 +86,34 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		GRPCServer: grpcServer,
 		Scheduler:  sched,
 	}, nil
+}
+
+func buildRepos(cfg *Config, db *pgxpool.Pool) (
+	service.ChatRepository,
+	service.LinkRepository,
+	service.SubscriptionRepository,
+	service.TagRepository,
+	service.Transactor,
+) {
+	switch cfg.AccessType {
+	case "squirrel":
+		return squirrelrepo.NewChatRepository(db),
+			squirrelrepo.NewLinkRepository(db),
+			squirrelrepo.NewSubscriptionRepository(db),
+			squirrelrepo.NewTagRepository(db),
+			repository.NewTransactor(db)
+	case "pgx":
+		return pgxrepo.NewChatRepository(db),
+			pgxrepo.NewLinkRepository(db),
+			pgxrepo.NewSubscriptionRepository(db),
+			pgxrepo.NewTagRepository(db),
+			repository.NewTransactor(db)
+	default:
+		memLinkRepo := memory.NewLinkRepository()
+		return memory.NewChatRepository(),
+			memLinkRepo,
+			memory.NewSubscriptionRepository(memLinkRepo),
+			memory.NewTagRepository(),
+			memory.NewTransactor()
+	}
 }

@@ -8,9 +8,11 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	bothttp "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/http"
+	kafkaconsumer "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/kafka"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/telegram"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/in/telegram/handlers"
 	scrapperclient "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/clients/scrapper"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/repository/memory"
 	pgxrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/repository/pgx"
 	squirrelrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/adapter/out/repository/squirrel"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
@@ -21,10 +23,11 @@ import (
 
 // Container holds all application dependencies.
 type Container struct {
-	Bot        *telegram.Bot
-	Registry   *telegram.Registry
-	Metas      []domain.CommandMeta
-	HTTPServer *bothttp.Server
+	Bot           *telegram.Bot
+	Registry      *telegram.Registry
+	Metas         []domain.CommandMeta
+	HTTPServer    *bothttp.Server
+	KafkaConsumer *kafkaconsumer.Consumer
 }
 
 // NewContainer builds and wires all dependencies.
@@ -42,8 +45,10 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	switch cfg.AccessType {
 	case "squirrel":
 		userRepo = squirrelrepo.NewUserRepository(db)
-	default: // "pgx"
+	case "pgx":
 		userRepo = pgxrepo.NewUserRepository(db)
+	default:
+		userRepo = memory.NewUserRepository()
 	}
 
 	var tgClient *tgbotapi.BotAPI
@@ -87,10 +92,19 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	updateSvc := service.NewUpdateService(bot)
 	httpServer := bothttp.NewServer(":"+cfg.Port, bothttp.NewHandler(updateSvc, logger))
 
+	consumer := kafkaconsumer.NewConsumer(
+		cfg.Kafka.Brokers,
+		cfg.Kafka.Topic,
+		cfg.Kafka.GroupID,
+		updateSvc,
+		logger,
+	)
+
 	return &Container{
-		Bot:        bot,
-		Registry:   telegram.NewRegistry(tgClient),
-		Metas:      metas,
-		HTTPServer: httpServer,
+		Bot:           bot,
+		Registry:      telegram.NewRegistry(tgClient),
+		Metas:         metas,
+		HTTPServer:    httpServer,
+		KafkaConsumer: consumer,
 	}, nil
 }
