@@ -1,3 +1,4 @@
+---
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -10,10 +11,7 @@ variables:
   GO_LINTER_VERSION: "v2.10"
   GOLANG_IMAGE: golang:${GO_VERSION}-alpine
   GOPATH: "$CI_PROJECT_DIR/.go"
-
-cache:
-  paths:
-    - .go/pkg/mod/
+  GITLAB_DOCKER_PROXY: gitlab.education.tbank.ru:443/backend-academy-go-2025/lecture-materials/dependency_proxy/containers
 
 stages:
   - lint
@@ -24,7 +22,7 @@ lint:
   stage: lint
   image: golangci/golangci-lint:${GO_LINTER_VERSION}-alpine
   script:
-    - golangci-lint run -c .golangci.yml --timeout=5m
+    - golangci-lint run -mod=vendor -c .golangci.yml --timeout=5m
   rules:
     - when: always
 
@@ -33,7 +31,7 @@ test:
   image: ${GOLANG_IMAGE}
   script:
     - apk add --no-cache gcc musl-dev
-    - go test -race -coverprofile=coverage.out $(go list ./... | grep -v integration)
+    - go test -mod=vendor -race -coverprofile=coverage.out $(go list -mod=vendor ./... | grep -v integration)
     - go tool cover -func=coverage.out
   coverage: '/total:\s+\(statements\)\s+(\d+.\d+)%/'
   rules:
@@ -43,9 +41,6 @@ integration_test:
   image: docker
   stage: test
   timeout: 15m
-  cache:
-    paths:
-      - .go/pkg/mod/
   variables:
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: "/certs"
@@ -60,7 +55,7 @@ integration_test:
     - apk add --no-cache go gcc musl-dev
     - export DOCKER_BUILDKIT=1
   script:
-    - go test -v -tags integration -timeout 12m ./internal/...
+    - go test -mod=vendor -v -tags integration -timeout 12m ./internal/...
   rules:
     - when: always
 
@@ -72,7 +67,7 @@ build:
     - for d in cmd/*; do
       name="$(basename "$d")";
       echo "Building $name";
-      go build -o "bin/$name" "./cmd/$name";
+      go build -mod=vendor -o "bin/$name" "./cmd/$name";
       done
   rules:
     - if: $CI_MERGE_REQUEST_ID
