@@ -8,12 +8,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	dockernetwork "github.com/docker/docker/api/types/network"
+	dockernetwork "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/suite"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/network"
@@ -160,10 +161,13 @@ func (s *E2ESuite) startTgMock() string {
 }
 
 func (s *E2ESuite) startDockerNetwork() (*testcontainers.DockerNetwork, string) {
-	second := rand.Intn(200) + 10 //nolint:gosec // insecure random is fine for subnet generation
-	third := rand.Intn(200) + 10  //nolint:gosec // insecure random is fine for subnet generation
-	subnet := fmt.Sprintf("10.%d.%d.0/24", second, third)
-	gateway := fmt.Sprintf("10.%d.%d.1", second, third)
+	second := rand.Intn(10) + 20 //nolint:gosec // 172.20-172.30
+	third := rand.Intn(200) + 10 //nolint:gosec // insecure random is fine for subnet generation
+	subnetStr := fmt.Sprintf("172.%d.%d.0/24", second, third)
+	gatewayStr := fmt.Sprintf("172.%d.%d.1", second, third)
+
+	subnet := netip.MustParsePrefix(subnetStr)
+	gateway := netip.MustParseAddr(gatewayStr)
 
 	dockerNet, err := network.New(s.ctx,
 		network.WithIPAM(&dockernetwork.IPAM{
@@ -175,7 +179,7 @@ func (s *E2ESuite) startDockerNetwork() (*testcontainers.DockerNetwork, string) 
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = dockerNet.Remove(s.ctx) })
 
-	return dockerNet, gateway
+	return dockerNet, "host.docker.internal"
 }
 
 func (s *E2ESuite) startScrapper(netName string) string {
@@ -232,6 +236,7 @@ func (s *E2ESuite) startBot(netName, gateway, mockPort string) string {
 			ExposedPorts:   []string{"8080/tcp"},
 			Networks:       []string{netName},
 			NetworkAliases: map[string][]string{netName: {"bot"}},
+			ExtraHosts:     []string{"host.docker.internal:host-gateway"},
 			Env: map[string]string{
 				"TELEGRAM_TOKEN":   "fake-token",
 				"TELEGRAM_API_URL": "http://" + gateway + ":" + mockPort,
