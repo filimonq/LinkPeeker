@@ -1,4 +1,3 @@
----
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -11,30 +10,26 @@ variables:
   GO_LINTER_VERSION: "v2.10"
   GOLANG_IMAGE: golang:${GO_VERSION}-alpine
   GOPATH: "$CI_PROJECT_DIR/.go"
-  GOLANGCI_LINT_CACHE: "$CI_PROJECT_DIR/.cache/golangci-lint"
 
 cache:
   paths:
     - .go/pkg/mod/
 
 stages:
-  - check
+  - lint
+  - test
   - build
 
 lint:
-  stage: check
+  stage: lint
   image: golangci/golangci-lint:${GO_LINTER_VERSION}-alpine
-  cache:
-    key: lint-cache
-    paths:
-      - .cache/golangci-lint
   script:
-    - golangci-lint run -c .golangci.yml --timeout=5m --fast
+    - golangci-lint run -c .golangci.yml --timeout=5m
   rules:
     - when: always
 
-unit_test:
-  stage: check
+test:
+  stage: test
   image: ${GOLANG_IMAGE}
   script:
     - apk add --no-cache gcc musl-dev
@@ -45,32 +40,33 @@ unit_test:
     - when: always
 
 integration_test:
-  stage: check
-  image: ${GOLANG_IMAGE}
+  image: docker
+  stage: test
   timeout: 15m
+  cache:
+    paths:
+      - .go/pkg/mod/
   variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-    TESTCONTAINERS_RYUK_DISABLED: "true"
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_VERIFY: 1
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
   tags:
     - dind
   services:
     - name: docker:dind
       alias: docker
-      command: ["--tls=false"]
   before_script:
-    - apk add --no-cache gcc musl-dev
+    - apk add --no-cache go gcc musl-dev
+    - export DOCKER_BUILDKIT=1
   script:
-    - go test -v ./internal/integration/...
+    - go test -v -tags integration -timeout 12m ./internal/...
   rules:
     - when: always
 
 build:
   stage: build
   image: ${GOLANG_IMAGE}
-  needs:
-    - job: lint
-    - job: unit_test
   script:
     - mkdir -p bin
     - for d in cmd/*; do

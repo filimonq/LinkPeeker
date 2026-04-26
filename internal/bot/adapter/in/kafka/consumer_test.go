@@ -1,3 +1,5 @@
+//go:build integration
+
 package kafka_test
 
 import (
@@ -61,8 +63,11 @@ func writeMsg(t *testing.T, brokers []string, topic string, value []byte) {
 func readFromDLQ(t *testing.T, brokers []string, dlqTopic string, timeout time.Duration) (kafkago.Message, bool) {
 	t.Helper()
 	r := kafkago.NewReader(kafkago.ReaderConfig{
-		Brokers: brokers, Topic: dlqTopic, Partition: 0,
-		MinBytes: 1, MaxBytes: 10 * 1024 * 1024,
+		Brokers:   brokers,
+		Topic:     dlqTopic,
+		Partition: 0,
+		MinBytes:  1,
+		MaxBytes:  10 * 1024 * 1024,
 	})
 	t.Cleanup(func() { _ = r.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -97,7 +102,7 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 	}, 15*time.Second, 200*time.Millisecond)
 }
 
-func TestConsumer_InvalidJSON_Skipped(t *testing.T) {
+func TestConsumer_InvalidJSON_SentToDLQ(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
 	const topic, dlq = "test-consumer-badjson", "test-consumer-badjson-dlq"
 	createTopic(t, brokers, topic)
@@ -109,18 +114,18 @@ func TestConsumer_InvalidJSON_Skipped(t *testing.T) {
 
 	writeMsg(t, brokers, topic, []byte("not json at all {{{"))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
 
-	<-ctx.Done()
-
+	// По требованиям: ошибка десериализации → сразу в DLQ
+	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 15*time.Second)
+	require.True(t, ok, "невалидный JSON должен попасть в DLQ")
+	assert.Equal(t, []byte("not json at all {{{"), dlqMsg.Value)
 	assert.Equal(t, int32(0), svc.count.Load(), "UpdateService не должен быть вызван")
-	_, hasDLQ := readFromDLQ(t, brokers, dlq, 2*time.Second)
-	assert.False(t, hasDLQ, "невалидный JSON не должен попасть в DLQ")
 }
 
-func TestConsumer_ValidationError_Skipped(t *testing.T) {
+func TestConsumer_ValidationError_SentToDLQ(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
 	const topic, dlq = "test-consumer-validation", "test-consumer-validation-dlq"
 	createTopic(t, brokers, topic)
@@ -130,19 +135,20 @@ func TestConsumer_ValidationError_Skipped(t *testing.T) {
 	c := kafka.NewConsumer(brokers, topic, "cg-validation", dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
+	// URL пустой → ошибка валидации
 	invalid := pkgdomain.LinkUpdate{ID: 1, TgChatIDs: []int64{1}}
 	body, _ := json.Marshal(invalid)
 	writeMsg(t, brokers, topic, body)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
 
-	<-ctx.Done()
-
+	// По требованиям: ошибка валидации → сразу в DLQ
+	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 15*time.Second)
+	require.True(t, ok, "невалидное сообщение должно попасть в DLQ")
+	assert.Equal(t, body, dlqMsg.Value)
 	assert.Equal(t, int32(0), svc.count.Load())
-	_, hasDLQ := readFromDLQ(t, brokers, dlq, 2*time.Second)
-	assert.False(t, hasDLQ, "невалидное сообщение не должно попасть в DLQ")
 }
 
 func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
@@ -168,8 +174,7 @@ func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
 	go c.Start(ctx)
 
 	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 30*time.Second)
-	require.True(t, ok, "сообщение должно попасть в DLQ")
-
+	require.True(t, ok, "сообщение должно попасть в DLQ после исчерпания ретраев")
 	assert.Equal(t, body, dlqMsg.Value)
 
 	var hasErrorHeader bool
@@ -180,7 +185,6 @@ func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
 		}
 	}
 	assert.True(t, hasErrorHeader, "DLQ сообщение должно содержать хедер error")
-
 	assert.Equal(t, int32(maxRetries+1), svc.count.Load())
 }
 

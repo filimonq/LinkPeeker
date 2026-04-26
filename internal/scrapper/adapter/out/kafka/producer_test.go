@@ -1,3 +1,5 @@
+//go:build integration
+
 package kafka_test
 
 import (
@@ -22,21 +24,17 @@ func createTopic(t *testing.T, brokers []string, topic string) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	topicConfigs := []kafkago.TopicConfig{
-		{
-			Topic:             topic,
-			NumPartitions:     1,
-			ReplicationFactor: 1,
-		},
-	}
-
-	err = conn.CreateTopics(topicConfigs...)
+	err = conn.CreateTopics(kafkago.TopicConfig{
+		Topic:             topic,
+		NumPartitions:     1,
+		ReplicationFactor: 1,
+	})
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
 		partitions, pErr := conn.ReadPartitions(topic)
 		return pErr == nil && len(partitions) > 0
-	}, 10*time.Second, 100*time.Millisecond, "Topic %s was not created in time", topic)
+	}, 10*time.Second, 100*time.Millisecond, "topic %s was not created in time", topic)
 }
 
 func readOne(t *testing.T, brokers []string, topic string) kafkago.Message {
@@ -96,9 +94,8 @@ func TestProducer_SendUpdate_KeyIsLinkID(t *testing.T) {
 
 	update := pkgdomain.LinkUpdate{ID: 99, URL: "https://github.com/x/y", TgChatIDs: []int64{1}}
 	assert.Eventually(t, func() bool {
-		err := p.SendUpdate(context.Background(), update)
-		return err == nil
-	}, 10*time.Second, 500*time.Millisecond, "Failed to send message after retries")
+		return p.SendUpdate(context.Background(), update) == nil
+	}, 10*time.Second, 500*time.Millisecond)
 
 	msg := readOne(t, brokers, topic)
 	assert.Equal(t, strconv.FormatInt(update.ID, 10), string(msg.Key))
@@ -120,10 +117,10 @@ func TestProducer_SendUpdate_MultipleMessages(t *testing.T) {
 
 	ctx := context.Background()
 	for _, u := range updates {
+		u := u
 		require.Eventually(t, func() bool {
-			err := p.SendUpdate(ctx, u)
-			return err == nil
-		}, 10*time.Second, 500*time.Millisecond, "Cannot send update %d", u.ID)
+			return p.SendUpdate(ctx, u) == nil
+		}, 10*time.Second, 500*time.Millisecond, "cannot send update %d", u.ID)
 	}
 
 	r := kafkago.NewReader(kafkago.ReaderConfig{

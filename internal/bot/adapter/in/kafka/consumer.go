@@ -109,10 +109,11 @@ func (c *Consumer) handle(ctx context.Context, msg kafka.Message) {
 	}
 
 	if errors.Is(err, ErrDeserialize) || errors.Is(err, ErrValidation) {
-		c.logger.Warn("message skipped",
+		c.logger.Warn("unrecoverable error, forwarding to DLQ",
 			slog.String("reason", err.Error()),
 			slog.Int64("offset", msg.Offset),
 		)
+		c.sendToDLQ(ctx, msg, err)
 		return
 	}
 
@@ -136,7 +137,7 @@ func (c *Consumer) handle(ctx context.Context, msg kafka.Message) {
 		}
 	}
 
-	c.logger.Error("message failed after retries, sending to DLQ",
+	c.logger.Error("all retries exhausted, sending to DLQ",
 		slog.String("err", err.Error()),
 		slog.Int64("offset", msg.Offset),
 	)
