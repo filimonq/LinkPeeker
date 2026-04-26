@@ -11,27 +11,30 @@ variables:
   GO_LINTER_VERSION: "v2.10"
   GOLANG_IMAGE: golang:${GO_VERSION}-alpine
   GOPATH: "$CI_PROJECT_DIR/.go"
-  GITLAB_DOCKER_PROXY: gitlab.education.tbank.ru:443/backend-academy-go-2025/lecture-materials/dependency_proxy/containers
+  GOLANGCI_LINT_CACHE: "$CI_PROJECT_DIR/.cache/golangci-lint"
 
 cache:
   paths:
     - .go/pkg/mod/
 
 stages:
-  - lint
-  - test
+  - check
   - build
 
 lint:
-  stage: lint
+  stage: check
   image: golangci/golangci-lint:${GO_LINTER_VERSION}-alpine
+  cache:
+    key: lint-cache
+    paths:
+      - .cache/golangci-lint
   script:
-    - golangci-lint run -c .golangci.yml --timeout=5m
+    - golangci-lint run -c .golangci.yml --timeout=5m --fast
   rules:
     - when: always
 
-test:
-  stage: test
+unit_test:
+  stage: check
   image: ${GOLANG_IMAGE}
   script:
     - apk add --no-cache gcc musl-dev
@@ -42,25 +45,21 @@ test:
     - when: always
 
 integration_test:
-  image: docker
-  stage: test
+  stage: check
+  image: ${GOLANG_IMAGE}
   timeout: 15m
-  cache:
-    paths:
-      - .go/pkg/mod/
   variables:
-    DOCKER_HOST: tcp://docker:2376
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_TLS_VERIFY: 1
-    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    TESTCONTAINERS_RYUK_DISABLED: "true"
   tags:
     - dind
   services:
     - name: docker:dind
       alias: docker
+      command: ["--tls=false"]
   before_script:
-    - apk add --no-cache go gcc musl-dev
-    - export DOCKER_BUILDKIT=1
+    - apk add --no-cache gcc musl-dev
   script:
     - go test -v ./internal/integration/...
   rules:
@@ -69,6 +68,9 @@ integration_test:
 build:
   stage: build
   image: ${GOLANG_IMAGE}
+  needs:
+    - job: lint
+    - job: unit_test
   script:
     - mkdir -p bin
     - for d in cmd/*; do
