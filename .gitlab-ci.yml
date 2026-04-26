@@ -1,7 +1,5 @@
 ---
 workflow:
-  auto_cancel:
-    on_new_commit: interruptible
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
@@ -14,27 +12,27 @@ variables:
   GOLANG_IMAGE: golang:${GO_VERSION}-alpine
   GOPATH: "$CI_PROJECT_DIR/.go"
   GITLAB_DOCKER_PROXY: gitlab.education.tbank.ru:443/backend-academy-go-2025/lecture-materials/dependency_proxy/containers
-  GOFLAGS: "-mod=vendor"
+
+cache:
+  paths:
+    - .go/pkg/mod/
 
 stages:
-  - check   # lint + test + integration_test
+  - lint
+  - test
   - build
 
 lint:
-  stage: check
+  stage: lint
   image: golangci/golangci-lint:${GO_LINTER_VERSION}-alpine
-  interruptible: true
-  needs: []
   script:
     - golangci-lint run -c .golangci.yml --timeout=5m
   rules:
     - when: always
 
 test:
-  stage: check
+  stage: test
   image: ${GOLANG_IMAGE}
-  interruptible: true
-  needs: []
   script:
     - apk add --no-cache gcc musl-dev
     - go test -race -coverprofile=coverage.out $(go list ./... | grep -v integration)
@@ -44,17 +42,17 @@ test:
     - when: always
 
 integration_test:
-  stage: check
   image: docker
-  interruptible: true
-  needs: []
+  stage: test
   timeout: 15m
+  cache:
+    paths:
+      - .go/pkg/mod/
   variables:
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: "/certs"
     DOCKER_TLS_VERIFY: 1
     DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
-    GOFLAGS: "-mod=vendor"
   tags:
     - dind
   services:
@@ -71,11 +69,6 @@ integration_test:
 build:
   stage: build
   image: ${GOLANG_IMAGE}
-  interruptible: true
-  needs:
-    - lint
-    - test
-    - integration_test
   script:
     - mkdir -p bin
     - for d in cmd/*; do
