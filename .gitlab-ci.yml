@@ -1,5 +1,7 @@
 ---
 workflow:
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
@@ -9,9 +11,11 @@ workflow:
 variables:
   GO_VERSION: "1.25"
   GO_LINTER_VERSION: "v2.10"
-  GOLANG_IMAGE: golang:${GO_VERSION}-alpine
+  PROXY: "gitlab.education.tbank.ru:443/backend-academy-go-2025/lecture-materials/dependency_proxy/containers"
+  GOLANG_IMAGE: "${PROXY}/golang:${GO_VERSION}-alpine"
+  GOLANGCI_IMAGE: "${PROXY}/golangci/golangci-lint:${GO_LINTER_VERSION}-alpine"
+  DOCKER_IMAGE: "${PROXY}/docker:latest"
   GOPATH: "$CI_PROJECT_DIR/.go"
-  GITLAB_DOCKER_PROXY: gitlab.education.tbank.ru:443/backend-academy-go-2025/lecture-materials/dependency_proxy/containers
 
 cache:
   paths:
@@ -24,7 +28,7 @@ stages:
 
 lint:
   stage: lint
-  image: golangci/golangci-lint:${GO_LINTER_VERSION}-alpine
+  image: ${GOLANGCI_IMAGE}
   script:
     - golangci-lint run -c .golangci.yml --timeout=5m
   rules:
@@ -42,7 +46,7 @@ test:
     - when: always
 
 integration_test:
-  image: docker
+  image: ${DOCKER_IMAGE} 
   stage: test
   timeout: 15m
   cache:
