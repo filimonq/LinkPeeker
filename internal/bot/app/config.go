@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -10,9 +11,11 @@ import (
 
 // KafkaConfig holds Kafka connection configuration.
 type KafkaConfig struct {
-	Brokers []string
-	Topic   string
-	GroupID string
+	Brokers    []string
+	Topic      string
+	GroupID    string
+	DLQTopic   string
+	MaxRetries int
 }
 
 // Config holds application configuration.
@@ -70,6 +73,18 @@ func Load() (*Config, error) {
 		kafkaGroupID = "bot-consumer-group"
 	}
 
+	dlqTopic := os.Getenv("KAFKA_DLQ_TOPIC")
+	if dlqTopic == "" {
+		dlqTopic = "link-updates-dlq"
+	}
+
+	maxRetries := 3
+	if retriesStr := os.Getenv("KAFKA_MAX_RETRIES"); retriesStr != "" {
+		if val, err := strconv.Atoi(retriesStr); err == nil {
+			maxRetries = val
+		}
+	}
+
 	return &Config{
 		TelegramToken:  token,
 		ScrapperURL:    scrapperURL,
@@ -78,9 +93,11 @@ func Load() (*Config, error) {
 		DatabaseURL:    dbURL,
 		AccessType:     accessType,
 		Kafka: KafkaConfig{
-			Brokers: kafkaBrokers,
-			Topic:   kafkaTopic,
-			GroupID: kafkaGroupID,
+			Brokers:    kafkaBrokers,
+			Topic:      kafkaTopic,
+			GroupID:    kafkaGroupID,
+			DLQTopic:   dlqTopic,
+			MaxRetries: maxRetries,
 		},
 	}, nil
 }
