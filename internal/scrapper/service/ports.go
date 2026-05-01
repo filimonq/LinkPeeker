@@ -70,3 +70,24 @@ type BotNotifier interface {
 type Transactor interface {
 	WithinTransaction(ctx context.Context, fn func(ctx context.Context) error) error
 }
+
+// OutboxEntry represents a single record in the outbox table.
+type OutboxEntry struct {
+	ID      int64
+	Payload []byte
+}
+
+// OutboxRepository persists outbox entries and tracks their delivery status.
+type OutboxRepository interface {
+	// Add inserts a new pending record. Must be called inside the same
+	// transaction as the business operation it accompanies.
+	Add(ctx context.Context, payload []byte) error
+
+	// FetchPending returns up to limit undelivered entries, locked for update
+	// so concurrent pollers do not pick the same row (SKIP LOCKED).
+	FetchPending(ctx context.Context, limit int) ([]*OutboxEntry, error)
+
+	// MarkSent flips the entry status to 'sent'. Called only after the
+	// publisher has successfully delivered the message.
+	MarkSent(ctx context.Context, id int64) error
+}

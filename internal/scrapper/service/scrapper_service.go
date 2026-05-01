@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -21,6 +22,7 @@ type scrapperService struct {
 	tags        TagRepository
 	checkers    []LinkChecker
 	notifier    BotNotifier
+	outbox      OutboxRepository
 	workerCount int
 	batchSize   int
 	tx          Transactor
@@ -57,6 +59,15 @@ func NewScrapperService(
 		workerCount: workerCount,
 		batchSize:   batchSize,
 		tx:          tx,
+	}
+}
+
+// WithOutbox enables the Transactional Outbox pattern. When set, updates are
+// written to the outbox table (inside the same DB transaction as UpdateTime)
+// instead of being sent directly via the notifier.
+func WithOutbox(svc ScrapperService, outbox OutboxRepository) {
+	if s, ok := svc.(*scrapperService); ok {
+		s.outbox = outbox
 	}
 }
 
@@ -295,16 +306,43 @@ func (s *scrapperService) processSingleLink(ctx context.Context, l *link.Link) e
 		return fmt.Errorf("find chats: %w", err)
 	}
 
-	if len(chatIDs) > 0 {
-		update := pkgdomain.LinkUpdate{
-			ID:          int64(l.ID),
-			URL:         l.URL,
-			Description: formatDescription(info),
-			TgChatIDs:   chatIDs,
+	if len(chatIDs) == 0 {
+		return nil
+	}
+
+	update := pkgdomain.LinkUpdate{
+		ID:          int64(l.ID),
+		URL:         l.URL,
+		Description: formatDescription(info),
+		TgChatIDs:   chatIDs,
+	}
+
+	if s.outbox != nil {
+		// Transactional Outbox: write the event and update the link timestamp
+		// atomically. The poller will pick it up and forward to Kafka.
+		if txErr := s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
+			payload, jsonErr := json.Marshal(update)
+			if jsonErr != nil {
+				return fmt.Errorf("marshal update for outbox: %w", jsonErr)
+			}
+
+			if addErr := s.outbox.Add(txCtx, payload); addErr != nil {
+				return fmt.Errorf("write to outbox: %w", addErr)
+			}
+
+			if timeErr := s.links.UpdateTime(txCtx, l.ID, info.UpdatedAt); timeErr != nil {
+				return fmt.Errorf("update link time: %w", timeErr)
+			}
+
+			return nil
+		}); txErr != nil {
+			return fmt.Errorf("outbox transaction: %w", txErr)
 		}
-		if err = s.notifier.SendUpdate(ctx, update); err != nil {
-			return fmt.Errorf("send update: %w", err)
-		}
+		return nil
+	}
+
+	if err = s.notifier.SendUpdate(ctx, update); err != nil {
+		return fmt.Errorf("send update: %w", err)
 	}
 
 	if err = s.links.UpdateTime(ctx, l.ID, info.UpdatedAt); err != nil {

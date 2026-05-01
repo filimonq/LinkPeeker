@@ -35,6 +35,13 @@ func (a *App) Run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	if container.OutboxPoller != nil {
+		go func() {
+			a.logger.Info("outbox poller starting")
+			container.OutboxPoller.Start(ctx)
+		}()
+	}
+
 	go func() {
 		a.logger.Info("scrapper http starting", slog.String("port", a.cfg.Port))
 		if srvErr := container.Server.Start(); srvErr != nil {
@@ -53,13 +60,11 @@ func (a *App) Run() error {
 	a.logger.Info("scrapper is shutting down")
 	container.GRPCServer.Stop()
 
-	err = container.Scheduler.Stop()
-	if err != nil {
+	if err = container.Scheduler.Stop(); err != nil {
 		a.logger.Error("scheduler stop error", slog.String("error", err.Error()))
 	}
 
-	err = container.Server.Shutdown(context.Background())
-	if err != nil {
+	if err = container.Server.Shutdown(context.Background()); err != nil {
 		a.logger.Error("server shutdown error", slog.String("error", err.Error()))
 	}
 

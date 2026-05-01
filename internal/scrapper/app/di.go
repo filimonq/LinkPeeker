@@ -13,6 +13,7 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/github"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/clients/stackoverflow"
 	kafkanotifier "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/kafka"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/outbox"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository"
 	memory "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository/memory"
 	pgxrepo "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/adapter/out/repository/pgx"
@@ -23,9 +24,10 @@ import (
 
 // Container holds all scrapper dependencies.
 type Container struct {
-	Server     *httphandler.Server
-	GRPCServer *scrappergrpc.Server
-	Scheduler  *scheduler.Scheduler
+	Server       *httphandler.Server
+	GRPCServer   *scrappergrpc.Server
+	Scheduler    *scheduler.Scheduler
+	OutboxPoller *outbox.Poller
 }
 
 // NewContainer builds and wires all dependencies.
@@ -40,11 +42,32 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	}
 
 	chatRepo, linkRepo, subscriptionRepo, tagRepo, transactor := buildRepos(cfg, db)
+	producer := kafkanotifier.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
 
 	var notifier service.BotNotifier
+
 	switch cfg.NotifierType {
+	case NotifierKafkaOutbox:
+		outboxRepo := buildOutboxRepo(cfg, db)
+		outboxPoller := outbox.NewPoller(
+			outboxRepo,
+			producer,
+			cfg.OutboxPollInterval,
+			cfg.BatchSize,
+			logger,
+		)
+		logger.Info("using transactional outbox notifier", slog.String("topic", cfg.Kafka.Topic))
+
+		svc := service.NewScrapperService(
+			chatRepo, linkRepo, subscriptionRepo, tagRepo,
+			buildCheckers(cfg),
+			producer,
+			cfg.WorkerCount, cfg.BatchSize, transactor,
+		)
+		service.WithOutbox(svc, outboxRepo)
+		return buildContainer(cfg, logger, svc, outboxPoller)
+
 	case NotifierKafka:
-		producer := kafkanotifier.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
 		notifier = producer
 		logger.Info("using kafka notifier", slog.String("topic", cfg.Kafka.Topic))
 	case NotifierHTTP:
@@ -55,23 +78,30 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		logger.Info("using http notifier", slog.String("bot_url", cfg.BotURL))
 	}
 
-	checkers := []service.LinkChecker{
+	svc := service.NewScrapperService(
+		chatRepo, linkRepo, subscriptionRepo, tagRepo,
+		buildCheckers(cfg),
+		notifier,
+		cfg.WorkerCount, cfg.BatchSize, transactor,
+	)
+	return buildContainer(cfg, logger, svc, nil)
+}
+
+func buildOutboxRepo(cfg *Config, db *pgxpool.Pool) service.OutboxRepository {
+	if cfg.AccessType == "squirrel" {
+		return squirrelrepo.NewOutboxRepository(db)
+	}
+	return pgxrepo.NewOutboxRepository(db)
+}
+
+func buildCheckers(cfg *Config) []service.LinkChecker {
+	return []service.LinkChecker{
 		github.NewClient(cfg.GitHubToken),
 		stackoverflow.NewClient(),
 	}
+}
 
-	svc := service.NewScrapperService(
-		chatRepo,
-		linkRepo,
-		subscriptionRepo,
-		tagRepo,
-		checkers,
-		notifier,
-		cfg.WorkerCount,
-		cfg.BatchSize,
-		transactor,
-	)
-
+func buildContainer(cfg *Config, logger *slog.Logger, svc service.ScrapperService, outboxPoller *outbox.Poller) (*Container, error) {
 	handler := httphandler.NewHandler(svc, logger)
 	server := httphandler.NewServer(":"+cfg.Port, handler)
 
@@ -82,9 +112,10 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 
 	grpcServer := scrappergrpc.NewServer(svc)
 	return &Container{
-		Server:     server,
-		GRPCServer: grpcServer,
-		Scheduler:  sched,
+		Server:       server,
+		GRPCServer:   grpcServer,
+		Scheduler:    sched,
+		OutboxPoller: outboxPoller,
 	}, nil
 }
 
