@@ -15,8 +15,10 @@ import (
 const keyPrefix = "links:"
 
 type linkDTO struct {
-	URL  string   `json:"url"`
-	Tags []string `json:"tags"`
+	ID        int64     `json:"id"`
+	URL       string    `json:"url"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Tags      []string  `json:"tags"`
 }
 
 // ValkeyCache implements service.LinkCache using a Valkey cluster.
@@ -55,16 +57,38 @@ func (c *ValkeyCache) Get(ctx context.Context, chatID int64) ([]*link.WithTags, 
 		return nil, fmt.Errorf("valkey get: %w", err)
 	}
 
-	var links []*link.WithTags
-	if err = json.Unmarshal([]byte(raw), &links); err != nil {
+	var dtos []linkDTO
+	if err = json.Unmarshal([]byte(raw), &dtos); err != nil {
 		return nil, nil
+	}
+
+	links := make([]*link.WithTags, len(dtos))
+	for i, d := range dtos {
+		links[i] = &link.WithTags{
+			Link: &link.Link{
+				ID:        link.ID(d.ID),
+				URL:       d.URL,
+				UpdatedAt: d.UpdatedAt,
+			},
+			Tags: d.Tags,
+		}
 	}
 	return links, nil
 }
 
 // Set stores links for chatID with the configured TTL.
 func (c *ValkeyCache) Set(ctx context.Context, chatID int64, links []*link.WithTags) error {
-	payload, err := json.Marshal(links)
+	dtos := make([]linkDTO, len(links))
+	for i, l := range links {
+		dtos[i] = linkDTO{
+			ID:        int64(l.ID),
+			URL:       l.URL,
+			UpdatedAt: l.UpdatedAt,
+			Tags:      l.Tags,
+		}
+	}
+
+	payload, err := json.Marshal(dtos)
 	if err != nil {
 		return fmt.Errorf("marshal links: %w", err)
 	}
