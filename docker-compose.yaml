@@ -38,7 +38,88 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      valkey-init:
+        condition: service_completed_successfully
     restart: unless-stopped
+
+  valkey-1:
+    image: valkey/valkey:9.0-alpine
+    command: >
+      valkey-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --requirepass ${VALKEY_PASSWORD}
+      --masterauth ${VALKEY_PASSWORD}
+      --appendonly yes
+      --save 60 1
+    volumes:
+      - valkey1data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  valkey-2:
+    image: valkey/valkey:9.0-alpine
+    command: >
+      valkey-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --requirepass ${VALKEY_PASSWORD}
+      --masterauth ${VALKEY_PASSWORD}
+      --appendonly yes
+      --save 60 1
+    volumes:
+      - valkey2data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  valkey-3:
+    image: valkey/valkey:9.0-alpine
+    command: >
+      valkey-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --requirepass ${VALKEY_PASSWORD}
+      --masterauth ${VALKEY_PASSWORD}
+      --appendonly yes
+      --save 60 1
+    volumes:
+      - valkey3data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  valkey-init:
+    image: valkey/valkey:9.0-alpine
+    depends_on:
+      valkey-1:
+        condition: service_healthy
+      valkey-2:
+        condition: service_healthy
+      valkey-3:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        valkey-cli -a ${VALKEY_PASSWORD} \
+          --cluster create \
+          valkey-1:6379 valkey-2:6379 valkey-3:6379 \
+          --cluster-replicas 0 \
+          --cluster-yes
+        echo "Valkey cluster created"
 
   kafka-1:
     image: apache/kafka:4.2.0
@@ -159,3 +240,6 @@ volumes:
   kafka1data:
   kafka2data:
   kafka3data:
+  valkey1data:
+  valkey2data:
+  valkey3data:

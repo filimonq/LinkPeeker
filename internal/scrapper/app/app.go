@@ -1,4 +1,3 @@
-// Package app assembles and runs the scrapper application.
 package app
 
 import (
@@ -26,6 +25,7 @@ func (a *App) Run() error {
 	if err != nil {
 		return fmt.Errorf("build container: %w", err)
 	}
+	defer container.Cache.Close()
 
 	err = container.Scheduler.Start()
 	if err != nil {
