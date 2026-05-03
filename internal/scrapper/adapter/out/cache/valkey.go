@@ -40,10 +40,11 @@ func New(addrs []string, password string, ttl time.Duration) (*ValkeyCache, erro
 		return nil, fmt.Errorf("create valkey client: %w", err)
 	}
 
+	const localCacheFactor = 2
 	return &ValkeyCache{
 		client:   client,
 		ttl:      ttl,
-		localTTL: ttl / 2,
+		localTTL: ttl / localCacheFactor,
 	}, nil
 }
 
