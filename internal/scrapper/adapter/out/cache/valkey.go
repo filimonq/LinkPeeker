@@ -21,22 +21,30 @@ type linkDTO struct {
 	Tags      []string  `json:"tags"`
 }
 
-// ValkeyCache implements service.LinkCache using a Valkey cluster.
+// ValkeyCache implements service.LinkCache using a Valkey cluster
+// with client-side caching enabled via RESP3.
 type ValkeyCache struct {
-	client valkey.Client
-	ttl    time.Duration
+	client   valkey.Client
+	ttl      time.Duration
+	localTTL time.Duration
 }
 
-// New creates a new ValkeyCache.
+// New creates a new ValkeyCache with client-side caching enabled.
 func New(addrs []string, password string, ttl time.Duration) (*ValkeyCache, error) {
 	client, err := valkey.NewClient(valkey.ClientOption{
-		InitAddress: addrs,
-		Password:    password,
+		InitAddress:  addrs,
+		Password:     password,
+		DisableCache: false,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create valkey client: %w", err)
 	}
-	return &ValkeyCache{client: client, ttl: ttl}, nil
+
+	return &ValkeyCache{
+		client:   client,
+		ttl:      ttl,
+		localTTL: ttl / 2,
+	}, nil
 }
 
 // Close closes the underlying client.
@@ -47,7 +55,11 @@ func (c *ValkeyCache) Close() {
 // Get returns cached links for chatID, or (nil, nil) on cache miss.
 func (c *ValkeyCache) Get(ctx context.Context, chatID int64) ([]*link.WithTags, error) {
 	key := cacheKey(chatID)
-	resp := c.client.Do(ctx, c.client.B().Get().Key(key).Build())
+
+	resp := c.client.DoCache(ctx,
+		c.client.B().Get().Key(key).Cache(),
+		c.localTTL,
+	)
 
 	raw, err := resp.ToString()
 	if err != nil {
