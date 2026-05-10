@@ -41,6 +41,9 @@ services:
       valkey-init:
         condition: service_completed_successfully
     restart: unless-stopped
+    ports:
+      - "8081:8081"
+      - "50051:50051"
 
   valkey-1:
     image: valkey/valkey:9.0-alpine
