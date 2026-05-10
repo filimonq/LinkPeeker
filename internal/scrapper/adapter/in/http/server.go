@@ -12,16 +12,20 @@ type Server struct {
 	server *http.Server
 }
 
-// NewServer creates a new Server.
-func NewServer(addr string, handler *Handler) *Server {
+func NewServer(addr string, handler *Handler, middlewares ...func(http.Handler) http.Handler) *Server {
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
+
+	var h http.Handler = mux
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		h = middlewares[i](h)
+	}
 
 	const readHeaderTimeout = 10 * time.Second
 	return &Server{
 		server: &http.Server{
 			Addr:              addr,
-			Handler:           mux,
+			Handler:           h,
 			ReadHeaderTimeout: readHeaderTimeout,
 		},
 	}
