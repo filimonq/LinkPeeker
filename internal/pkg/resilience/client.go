@@ -91,9 +91,9 @@ func (c *Client) Execute(ctx context.Context, fn func(ctx context.Context) (*htt
 		},
 		retry.Attempts(c.cfg.RetryAttempts),
 		retry.Delay(c.cfg.RetryDelay),
-		retry.DelayType(retry.FixedDelay),
-		retry.Context(ctx),
+		retry.DelayType(retry.BackOffDelay),
 		retry.LastErrorOnly(true),
+		retry.Context(ctx),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("resilient execution failed: %w", err)
