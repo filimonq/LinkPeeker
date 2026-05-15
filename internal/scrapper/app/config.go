@@ -123,7 +123,7 @@ func loadResilienceConfig() ResilienceConfig {
 		Timeout:             time.Duration(loadInt("RESILIENCE_TIMEOUT_MS", defaultResilienceTimeout)) * time.Millisecond,
 		RetryAttempts:       uint(loadInt("RESILIENCE_RETRY_ATTEMPTS", defaultRetryAttempts)),
 		RetryDelay:          time.Duration(loadInt("RESILIENCE_RETRY_DELAY_MS", defaultRetryDelay)) * time.Millisecond,
-		RetryableStatuses:   []int{500, 502, 503, 504},
+		RetryableStatuses:   loadRetryableStatuses(),
 		CBSlidingWindowSize: uint32(loadInt("CB_SLIDING_WINDOW_SIZE", defaultCBWindowSize)),
 		CBMinCalls:          uint32(loadInt("CB_MIN_CALLS", defaultCBMinCalls)),
 		CBFailureRate:       loadFloat("CB_FAILURE_RATE", defaultCBFailureRate),
@@ -132,6 +132,21 @@ func loadResilienceConfig() ResilienceConfig {
 		RateLimitRPS:        loadFloat("RATE_LIMIT_RPS", defaultRateLimitRPS),
 		RateLimitBurst:      loadInt("RATE_LIMIT_BURST", defaultRateLimitBurst),
 	}
+}
+
+func loadRetryableStatuses() []int {
+	s := os.Getenv("RETRY_STATUSES")
+	if s == "" {
+		return []int{500, 502, 503, 504}
+	}
+	parts := strings.Split(s, ",")
+	statuses := make([]int, 0, len(parts))
+	for _, p := range parts {
+		if v, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
+			statuses = append(statuses, v)
+		}
+	}
+	return statuses
 }
 
 func envOrDefault(key, def string) string {
