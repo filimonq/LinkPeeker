@@ -10,6 +10,8 @@ type LinkUpdate struct {
 	URL         string  `json:"url"`
 	Description string  `json:"description"`
 	TgChatIDs   []int64 `json:"tgChatIds"`
+	Author      string  `json:"author,omitempty"`
+	Priority    string  `json:"priority,omitempty"`
 }
 
 // UpdateInfo contains details about a detected change at a URL.

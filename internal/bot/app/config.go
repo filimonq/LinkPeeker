@@ -84,9 +84,9 @@ func loadKafkaConfig() KafkaConfig {
 
 	return KafkaConfig{
 		Brokers:    brokers,
-		Topic:      getEnv("KAFKA_TOPIC", "link-updates"),
-		GroupID:    getEnv("KAFKA_GROUP_ID", "bot-consumer-group"),
-		DLQTopic:   getEnv("KAFKA_DLQ_TOPIC", "link-updates-dlq"),
+		Topic:      getEnv("BOT_KAFKA_TOPIC", "link.processed-updates"),
+		GroupID:    getEnv("BOT_KAFKA_GROUP_ID", "bot-consumer-group"),
+		DLQTopic:   getEnv("BOT_KAFKA_DLQ_TOPIC", "link.processed-updates-dlq"),
 		MaxRetries: maxRetries,
 	}
 }

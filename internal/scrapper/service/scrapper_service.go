@@ -334,6 +334,7 @@ func (s *scrapperService) processSingleLink(ctx context.Context, l *link.Link) e
 		ID:          int64(l.ID),
 		URL:         l.URL,
 		Description: formatDescription(info),
+		Author:      info.Author,
 		TgChatIDs:   chatIDs,
 	}
 

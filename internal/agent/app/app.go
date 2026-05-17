@@ -1,0 +1,48 @@
+// Package app assembles and runs the AI agent application.
+package app
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os/signal"
+	"syscall"
+)
+
+// App is the main application container.
+type App struct {
+	logger *slog.Logger
+	cfg    *Config
+}
+
+// New creates a new App instance.
+func New(logger *slog.Logger, cfg *Config) *App {
+	return &App{logger: logger, cfg: cfg}
+}
+
+// Run initializes and starts the AI agent application.
+func (a *App) Run() error {
+	container, err := NewContainer(a.cfg, a.logger)
+	if err != nil {
+		return fmt.Errorf("build container: %w", err)
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	go func() {
+		container.KafkaConsumer.Start(ctx)
+	}()
+
+	<-ctx.Done()
+	a.logger.Info("ai agent is shutting down")
+
+	if err = container.KafkaConsumer.Close(); err != nil {
+		a.logger.Error("kafka consumer close error", slog.String("error", err.Error()))
+	}
+	if err = container.KafkaProducer.Close(); err != nil {
+		a.logger.Error("kafka producer close error", slog.String("error", err.Error()))
+	}
+
+	return nil
+}
