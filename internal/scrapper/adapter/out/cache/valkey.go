@@ -72,7 +72,7 @@ func (c *ValkeyCache) Get(ctx context.Context, chatID int64) ([]*link.WithTags, 
 
 	var dtos []linkDTO
 	if err = json.Unmarshal([]byte(raw), &dtos); err != nil {
-		return nil, nil
+		return nil, fmt.Errorf("unmarshal cached links: %w", err)
 	}
 
 	links := make([]*link.WithTags, len(dtos))

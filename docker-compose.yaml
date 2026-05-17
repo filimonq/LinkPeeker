@@ -15,7 +15,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    
+
   bot:
     build:
       context: .
@@ -105,6 +105,66 @@ services:
       retries: 10
       start_period: 10s
 
+  valkey-4:
+    image: valkey/valkey:9.0-alpine
+    command: >
+      valkey-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --requirepass ${VALKEY_PASSWORD}
+      --masterauth ${VALKEY_PASSWORD}
+      --appendonly yes
+      --save 60 1
+    volumes:
+      - valkey4data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  valkey-5:
+    image: valkey/valkey:9.0-alpine
+    command: >
+      valkey-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --requirepass ${VALKEY_PASSWORD}
+      --masterauth ${VALKEY_PASSWORD}
+      --appendonly yes
+      --save 60 1
+    volumes:
+      - valkey5data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  valkey-6:
+    image: valkey/valkey:9.0-alpine
+    command: >
+      valkey-server
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --requirepass ${VALKEY_PASSWORD}
+      --masterauth ${VALKEY_PASSWORD}
+      --appendonly yes
+      --save 60 1
+    volumes:
+      - valkey6data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   valkey-init:
     image: valkey/valkey:9.0-alpine
     depends_on:
@@ -114,13 +174,20 @@ services:
         condition: service_healthy
       valkey-3:
         condition: service_healthy
+      valkey-4:
+        condition: service_healthy
+      valkey-5:
+        condition: service_healthy
+      valkey-6:
+        condition: service_healthy
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         valkey-cli -a ${VALKEY_PASSWORD} \
           --cluster create \
           valkey-1:6379 valkey-2:6379 valkey-3:6379 \
-          --cluster-replicas 0 \
+          valkey-4:6379 valkey-5:6379 valkey-6:6379 \
+          --cluster-replicas 1 \
           --cluster-yes
         echo "Valkey cluster created"
 
@@ -208,7 +275,7 @@ services:
         condition: service_healthy
       kafka-3:
         condition: service_healthy
-    entrypoint: [ "/bin/bash", "-c" ]
+    entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 \
@@ -246,3 +313,6 @@ volumes:
   valkey1data:
   valkey2data:
   valkey3data:
+  valkey4data:
+  valkey5data:
+  valkey6data:
