@@ -4,25 +4,54 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/time/rate"
 )
 
+const (
+	cleanupInterval = time.Minute
+	entryTTL        = 3 * time.Minute
+)
+
+type ipEntry struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
+}
+
 func PerIPRateLimiter(rps float64, burst int) func(http.Handler) http.Handler {
 	var (
 		mu       sync.Mutex
-		limiters = make(map[string]*rate.Limiter)
+		limiters = make(map[string]*ipEntry)
 	)
+
+	go func() {
+		ticker := time.NewTicker(cleanupInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			mu.Lock()
+			for ip, e := range limiters {
+				if time.Since(e.lastSeen) > entryTTL {
+					delete(limiters, ip)
+				}
+			}
+			mu.Unlock()
+		}
+	}()
 
 	getLimiter := func(ip string) *rate.Limiter {
 		mu.Lock()
 		defer mu.Unlock()
-		if l, ok := limiters[ip]; ok {
-			return l
+		if e, ok := limiters[ip]; ok {
+			e.lastSeen = time.Now()
+			return e.limiter
 		}
-		l := rate.NewLimiter(rate.Limit(rps), burst)
-		limiters[ip] = l
-		return l
+		e := &ipEntry{
+			limiter:  rate.NewLimiter(rate.Limit(rps), burst),
+			lastSeen: time.Now(),
+		}
+		limiters[ip] = e
+		return e.limiter
 	}
 
 	return func(next http.Handler) http.Handler {

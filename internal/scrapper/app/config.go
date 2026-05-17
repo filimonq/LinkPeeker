@@ -65,8 +65,9 @@ type ResilienceConfig struct {
 	CBHalfOpenCalls     uint32
 	CBWaitDuration      time.Duration
 
-	RateLimitRPS   float64
-	RateLimitBurst int
+	RateLimitRPS          float64
+	RateLimitBurst        int
+	UseExponentialBackoff bool
 }
 
 type Config struct {
@@ -120,17 +121,18 @@ func Load() (*Config, error) {
 
 func loadResilienceConfig() ResilienceConfig {
 	return ResilienceConfig{
-		Timeout:             time.Duration(loadInt("RESILIENCE_TIMEOUT_MS", defaultResilienceTimeout)) * time.Millisecond,
-		RetryAttempts:       uint(loadInt("RESILIENCE_RETRY_ATTEMPTS", defaultRetryAttempts)),
-		RetryDelay:          time.Duration(loadInt("RESILIENCE_RETRY_DELAY_MS", defaultRetryDelay)) * time.Millisecond,
-		RetryableStatuses:   loadRetryableStatuses(),
-		CBSlidingWindowSize: uint32(loadInt("CB_SLIDING_WINDOW_SIZE", defaultCBWindowSize)),
-		CBMinCalls:          uint32(loadInt("CB_MIN_CALLS", defaultCBMinCalls)),
-		CBFailureRate:       loadFloat("CB_FAILURE_RATE", defaultCBFailureRate),
-		CBHalfOpenCalls:     uint32(loadInt("CB_HALF_OPEN_CALLS", defaultCBHalfOpen)),
-		CBWaitDuration:      loadDuration("CB_WAIT_DURATION_SECONDS", 1*time.Second),
-		RateLimitRPS:        loadFloat("RATE_LIMIT_RPS", defaultRateLimitRPS),
-		RateLimitBurst:      loadInt("RATE_LIMIT_BURST", defaultRateLimitBurst),
+		Timeout:               time.Duration(loadInt("RESILIENCE_TIMEOUT_MS", defaultResilienceTimeout)) * time.Millisecond,
+		RetryAttempts:         uint(loadInt("RESILIENCE_RETRY_ATTEMPTS", defaultRetryAttempts)),
+		RetryDelay:            time.Duration(loadInt("RESILIENCE_RETRY_DELAY_MS", defaultRetryDelay)) * time.Millisecond,
+		RetryableStatuses:     loadRetryableStatuses(),
+		CBSlidingWindowSize:   uint32(loadInt("CB_SLIDING_WINDOW_SIZE", defaultCBWindowSize)),
+		CBMinCalls:            uint32(loadInt("CB_MIN_CALLS", defaultCBMinCalls)),
+		CBFailureRate:         loadFloat("CB_FAILURE_RATE", defaultCBFailureRate),
+		CBHalfOpenCalls:       uint32(loadInt("CB_HALF_OPEN_CALLS", defaultCBHalfOpen)),
+		CBWaitDuration:        loadDuration("CB_WAIT_DURATION_SECONDS", 1*time.Second),
+		RateLimitRPS:          loadFloat("RATE_LIMIT_RPS", defaultRateLimitRPS),
+		RateLimitBurst:        loadInt("RATE_LIMIT_BURST", defaultRateLimitBurst),
+		UseExponentialBackoff: os.Getenv("RETRY_EXPONENTIAL_BACKOFF") == "true",
 	}
 }
 

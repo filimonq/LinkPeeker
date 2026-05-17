@@ -104,15 +104,16 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 
 func newResilientClient(cfg ResilienceConfig, name string) *resilience.Client {
 	return resilience.NewClient(resilience.Config{
-		Timeout:           cfg.Timeout,
-		RetryAttempts:     cfg.RetryAttempts,
-		RetryDelay:        cfg.RetryDelay,
-		RetryableStatuses: cfg.RetryableStatuses,
-		CBName:            name,
-		CBMinCalls:        cfg.CBMinCalls,
-		CBFailureRate:     cfg.CBFailureRate,
-		CBHalfOpenCalls:   cfg.CBHalfOpenCalls,
-		CBWaitDuration:    cfg.CBWaitDuration,
+		Timeout:               cfg.Timeout,
+		RetryAttempts:         cfg.RetryAttempts,
+		RetryDelay:            cfg.RetryDelay,
+		RetryableStatuses:     cfg.RetryableStatuses,
+		CBName:                name,
+		CBMinCalls:            cfg.CBMinCalls,
+		CBFailureRate:         cfg.CBFailureRate,
+		CBHalfOpenCalls:       cfg.CBHalfOpenCalls,
+		CBWaitDuration:        cfg.CBWaitDuration,
+		UseExponentialBackoff: cfg.UseExponentialBackoff,
 	})
 }
 

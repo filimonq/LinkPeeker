@@ -13,15 +13,17 @@ import (
 )
 
 type Config struct {
-	Timeout           time.Duration
-	RetryAttempts     uint
-	RetryDelay        time.Duration
-	RetryableStatuses []int
-	CBName            string
-	CBMinCalls        uint32
-	CBFailureRate     float64
-	CBHalfOpenCalls   uint32
-	CBWaitDuration    time.Duration
+	Timeout               time.Duration
+	RetryAttempts         uint
+	RetryDelay            time.Duration
+	RetryableStatuses     []int
+	UseExponentialBackoff bool // true = exponential, false = constant
+	CBName                string
+	CBSlidingWindowSize   uint32
+	CBMinCalls            uint32
+	CBFailureRate         float64
+	CBHalfOpenCalls       uint32
+	CBWaitDuration        time.Duration
 }
 
 type statusError struct{ code int }
@@ -39,6 +41,7 @@ func NewClient(cfg Config) *Client {
 		Name:        cfg.CBName,
 		MaxRequests: cfg.CBHalfOpenCalls,
 		Timeout:     cfg.CBWaitDuration,
+		Interval:    time.Duration(cfg.CBSlidingWindowSize) * time.Second,
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
 			if counts.Requests < cfg.CBMinCalls {
 				return false
@@ -52,6 +55,11 @@ func NewClient(cfg Config) *Client {
 
 func (c *Client) Execute(ctx context.Context, fn func(ctx context.Context) (*http.Response, error)) (*http.Response, error) {
 	var resp *http.Response
+
+	delayType := retry.FixedDelay
+	if c.cfg.UseExponentialBackoff {
+		delayType = retry.BackOffDelay
+	}
 
 	err := retry.Do(
 		func() error {
@@ -87,11 +95,17 @@ func (c *Client) Execute(ctx context.Context, fn func(ctx context.Context) (*htt
 			if !ok {
 				return retry.Unrecoverable(errors.New("result is not *http.Response"))
 			}
+
+			if c.isRetryable(resp.StatusCode) {
+				_ = resp.Body.Close()
+				return fmt.Errorf("retryable status: %w", &statusError{code: resp.StatusCode})
+			}
+
 			return nil
 		},
 		retry.Attempts(c.cfg.RetryAttempts),
 		retry.Delay(c.cfg.RetryDelay),
-		retry.DelayType(retry.BackOffDelay),
+		retry.DelayType(delayType),
 		retry.LastErrorOnly(true),
 		retry.Context(ctx),
 	)
