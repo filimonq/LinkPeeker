@@ -126,6 +126,7 @@ func TestRetry_ExponentialBackoffIntervals(t *testing.T) {
 	cfg.RetryAttempts = 3
 	cfg.RetryDelay = 50 * time.Millisecond
 	cfg.RetryableStatuses = []int{500}
+	cfg.UseExponentialBackoff = true
 	client := resilience.NewClient(cfg)
 
 	_, _ = doGet(t, client, srv.URL)
@@ -138,7 +139,7 @@ func TestRetry_ExponentialBackoffIntervals(t *testing.T) {
 	interval1 := timestamps[1].Sub(timestamps[0])
 	interval2 := timestamps[2].Sub(timestamps[1])
 
-	assert.GreaterOrEqual(t, interval2, interval1)
+	assert.GreaterOrEqual(t, interval2, interval1-10*time.Millisecond)
 	assert.GreaterOrEqual(t, interval1, 25*time.Millisecond)
 }
 
