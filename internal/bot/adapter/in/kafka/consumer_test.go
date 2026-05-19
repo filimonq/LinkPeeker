@@ -63,11 +63,12 @@ func writeMsg(t *testing.T, brokers []string, topic string, value []byte) {
 func readFromDLQ(t *testing.T, brokers []string, dlqTopic string, timeout time.Duration) (kafkago.Message, bool) {
 	t.Helper()
 	r := kafkago.NewReader(kafkago.ReaderConfig{
-		Brokers:   brokers,
-		Topic:     dlqTopic,
-		Partition: 0,
-		MinBytes:  1,
-		MaxBytes:  10 * 1024 * 1024,
+		Brokers:     brokers,
+		Topic:       dlqTopic,
+		Partition:   0,
+		MinBytes:    1,
+		MaxBytes:    10 * 1024 * 1024,
+		StartOffset: kafkago.FirstOffset,
 	})
 	t.Cleanup(func() { _ = r.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -89,13 +90,13 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 	c := kafka.NewConsumer(brokers, topic, "cg-valid", dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
-	update := pkgdomain.LinkUpdate{ID: 1, URL: "https://github.com/x/y", TgChatIDs: []int64{1}}
-	body, _ := json.Marshal(update)
-	writeMsg(t, brokers, topic, body)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
+
+	update := pkgdomain.LinkUpdate{ID: 1, URL: "https://github.com/x/y", TgChatIDs: []int64{1}}
+	body, _ := json.Marshal(update)
+	writeMsg(t, brokers, topic, body)
 
 	assert.Eventually(t, func() bool {
 		return svc.count.Load() >= 1
@@ -112,14 +113,14 @@ func TestConsumer_InvalidJSON_SentToDLQ(t *testing.T) {
 	c := kafka.NewConsumer(brokers, topic, "cg-badjson", dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
-	writeMsg(t, brokers, topic, []byte("not json at all {{{"))
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
 
+	writeMsg(t, brokers, topic, []byte("not json at all {{{"))
+
 	// По требованиям: ошибка десериализации → сразу в DLQ
-	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 15*time.Second)
+	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 10*time.Second)
 	require.True(t, ok, "невалидный JSON должен попасть в DLQ")
 	assert.Equal(t, []byte("not json at all {{{"), dlqMsg.Value)
 	assert.Equal(t, int32(0), svc.count.Load(), "UpdateService не должен быть вызван")
@@ -135,17 +136,17 @@ func TestConsumer_ValidationError_SentToDLQ(t *testing.T) {
 	c := kafka.NewConsumer(brokers, topic, "cg-validation", dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Start(ctx)
+
 	// URL пустой → ошибка валидации
 	invalid := pkgdomain.LinkUpdate{ID: 1, TgChatIDs: []int64{1}}
 	body, _ := json.Marshal(invalid)
 	writeMsg(t, brokers, topic, body)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Start(ctx)
-
 	// По требованиям: ошибка валидации → сразу в DLQ
-	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 15*time.Second)
+	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 10*time.Second)
 	require.True(t, ok, "невалидное сообщение должно попасть в DLQ")
 	assert.Equal(t, body, dlqMsg.Value)
 	assert.Equal(t, int32(0), svc.count.Load())
@@ -165,15 +166,15 @@ func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
 	c := kafka.NewConsumer(brokers, topic, "cg-retry-dlq", dlq, maxRetries, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
-	update := pkgdomain.LinkUpdate{ID: 2, URL: "https://github.com/x/y", TgChatIDs: []int64{1}}
-	body, _ := json.Marshal(update)
-	writeMsg(t, brokers, topic, body)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
 
-	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 30*time.Second)
+	update := pkgdomain.LinkUpdate{ID: 2, URL: "https://github.com/x/y", TgChatIDs: []int64{1}}
+	body, _ := json.Marshal(update)
+	writeMsg(t, brokers, topic, body)
+
+	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 10*time.Second)
 	require.True(t, ok, "сообщение должно попасть в DLQ после исчерпания ретраев")
 	assert.Equal(t, body, dlqMsg.Value)
 
@@ -201,13 +202,13 @@ func TestConsumer_BusinessError_SucceedsOnRetry(t *testing.T) {
 	c := kafka.NewConsumer(brokers, topic, "cg-retry-ok", dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
-	update := pkgdomain.LinkUpdate{ID: 3, URL: "https://github.com/x/z", TgChatIDs: []int64{1}}
-	body, _ := json.Marshal(update)
-	writeMsg(t, brokers, topic, body)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
+
+	update := pkgdomain.LinkUpdate{ID: 3, URL: "https://github.com/x/z", TgChatIDs: []int64{1}}
+	body, _ := json.Marshal(update)
+	writeMsg(t, brokers, topic, body)
 
 	assert.Eventually(t, func() bool {
 		return svc.count.Load() >= 2
