@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync/atomic"
@@ -37,6 +38,10 @@ func (m *mockSvc) SendUpdate(_ context.Context, _ pkgdomain.LinkUpdate) error {
 
 func noopLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func uniqueName(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 }
 
 func createTopic(t *testing.T, brokers []string, topic string) {
@@ -82,12 +87,12 @@ func readFromDLQ(t *testing.T, brokers []string, dlqTopic string, timeout time.D
 
 func TestConsumer_ValidMessage_Processed(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-valid", "test-consumer-valid-dlq"
+	topic, dlq := uniqueName("test-consumer-valid"), uniqueName("test-consumer-valid-dlq")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 
 	svc := &mockSvc{}
-	c := kafka.NewConsumer(brokers, topic, "cg-valid", dlq, 3, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-valid"), dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -105,12 +110,12 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 
 func TestConsumer_InvalidJSON_SentToDLQ(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-badjson", "test-consumer-badjson-dlq"
+	topic, dlq := uniqueName("test-consumer-badjson"), uniqueName("test-consumer-badjson-dlq")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 
 	svc := &mockSvc{}
-	c := kafka.NewConsumer(brokers, topic, "cg-badjson", dlq, 3, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-badjson"), dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -128,12 +133,12 @@ func TestConsumer_InvalidJSON_SentToDLQ(t *testing.T) {
 
 func TestConsumer_ValidationError_SentToDLQ(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-validation", "test-consumer-validation-dlq"
+	topic, dlq := uniqueName("test-consumer-validation"), uniqueName("test-consumer-validation-dlq")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 
 	svc := &mockSvc{}
-	c := kafka.NewConsumer(brokers, topic, "cg-validation", dlq, 3, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-validation"), dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -154,7 +159,7 @@ func TestConsumer_ValidationError_SentToDLQ(t *testing.T) {
 
 func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-retry-dlq", "test-consumer-retry-dlq-dead"
+	topic, dlq := uniqueName("test-consumer-retry-dlq"), uniqueName("test-consumer-retry-dlq-dead")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 	const maxRetries = 2
@@ -163,7 +168,7 @@ func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
 		err:       errors.New("telegram api down"),
 		failTimes: maxRetries + 1,
 	}
-	c := kafka.NewConsumer(brokers, topic, "cg-retry-dlq", dlq, maxRetries, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-retry-dlq"), dlq, maxRetries, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -191,7 +196,7 @@ func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
 
 func TestConsumer_BusinessError_SucceedsOnRetry(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-retry-ok", "test-consumer-retry-ok-dead"
+	topic, dlq := uniqueName("test-consumer-retry-ok"), uniqueName("test-consumer-retry-ok-dead")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 
@@ -199,7 +204,7 @@ func TestConsumer_BusinessError_SucceedsOnRetry(t *testing.T) {
 		err:       errors.New("temporary error"),
 		failTimes: 1,
 	}
-	c := kafka.NewConsumer(brokers, topic, "cg-retry-ok", dlq, 3, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-retry-ok"), dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
