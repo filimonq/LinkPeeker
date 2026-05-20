@@ -18,10 +18,10 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service/state"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/middleware"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/migrate"
 )
 
-// Container holds all application dependencies.
 type Container struct {
 	Bot           *telegram.Bot
 	Registry      *telegram.Registry
@@ -30,13 +30,11 @@ type Container struct {
 	KafkaConsumer *kafkaconsumer.Consumer
 }
 
-// NewContainer builds and wires all dependencies.
 func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("connect to db: %w", err)
 	}
-
 	if err = migrate.Run(cfg.DatabaseURL, "database"); err != nil {
 		return nil, fmt.Errorf("run migrations: %w", err)
 	}
@@ -67,7 +65,6 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	}
 
 	storage := state.NewStorage()
-
 	handlerList := []service.CommandHandler{
 		handlers.NewStartHandler(userRepo, scrapperClient),
 		handlers.NewHelpHandler(),
@@ -90,16 +87,17 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	bot := telegram.NewBot(tgClient, svc, logger)
 
 	updateSvc := service.NewUpdateService(bot)
-	httpServer := bothttp.NewServer(":"+cfg.Port, bothttp.NewHandler(updateSvc, logger))
 
+	httpHandler := bothttp.NewHandler(updateSvc, logger)
+	httpServer := bothttp.NewServer(
+		":"+cfg.Port,
+		httpHandler,
+		middleware.PerIPRateLimiter(cfg.RateLimit.RPS, cfg.RateLimit.Burst),
+	)
 	consumer := kafkaconsumer.NewConsumer(
-		cfg.Kafka.Brokers,
-		cfg.Kafka.Topic,
-		cfg.Kafka.GroupID,
-		cfg.Kafka.DLQTopic,
-		cfg.Kafka.MaxRetries,
-		updateSvc,
-		logger,
+		cfg.Kafka.Brokers, cfg.Kafka.Topic, cfg.Kafka.GroupID,
+		cfg.Kafka.DLQTopic, cfg.Kafka.MaxRetries,
+		updateSvc, logger,
 	)
 
 	return &Container{

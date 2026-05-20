@@ -18,7 +18,11 @@ type KafkaConfig struct {
 	MaxRetries int
 }
 
-// Config holds application configuration.
+type RateLimitConfig struct {
+	RPS   float64
+	Burst int
+}
+
 type Config struct {
 	TelegramToken  string
 	ScrapperURL    string
@@ -27,6 +31,7 @@ type Config struct {
 	DatabaseURL    string
 	AccessType     string // "pgx" or "squirrel"
 	Kafka          KafkaConfig
+	RateLimit      RateLimitConfig
 }
 
 // Load reads configuration from environment variables.
@@ -43,61 +48,57 @@ func Load() (*Config, error) {
 		return nil, errors.New("SCRAPPER_URL is not set")
 	}
 
-	port := os.Getenv("BOT_PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		return nil, errors.New("DATABASE_URL is not set")
-	}
-
-	accessType := os.Getenv("ACCESS_TYPE")
-	if accessType == "" {
-		accessType = "pgx"
-	}
-
-	kafkaBrokers := []string{"kafka-1:9092", "kafka-2:9092", "kafka-3:9092"}
-	if brokersStr := os.Getenv("KAFKA_BROKERS"); brokersStr != "" {
-		kafkaBrokers = strings.Split(brokersStr, ",")
-	}
-
-	kafkaTopic := os.Getenv("KAFKA_TOPIC")
-	if kafkaTopic == "" {
-		kafkaTopic = "link-updates"
-	}
-
-	kafkaGroupID := os.Getenv("KAFKA_GROUP_ID")
-	if kafkaGroupID == "" {
-		kafkaGroupID = "bot-consumer-group"
-	}
-
-	dlqTopic := os.Getenv("KAFKA_DLQ_TOPIC")
-	if dlqTopic == "" {
-		dlqTopic = "link-updates-dlq"
-	}
-
-	maxRetries := 3
-	if retriesStr := os.Getenv("KAFKA_MAX_RETRIES"); retriesStr != "" {
-		if val, err := strconv.Atoi(retriesStr); err == nil {
-			maxRetries = val
-		}
-	}
-
 	return &Config{
 		TelegramToken:  token,
 		ScrapperURL:    scrapperURL,
-		Port:           port,
+		Port:           getEnv("BOT_PORT", "8080"),
 		TelegramAPIURL: os.Getenv("TELEGRAM_API_URL"),
-		DatabaseURL:    dbURL,
-		AccessType:     accessType,
-		Kafka: KafkaConfig{
-			Brokers:    kafkaBrokers,
-			Topic:      kafkaTopic,
-			GroupID:    kafkaGroupID,
-			DLQTopic:   dlqTopic,
-			MaxRetries: maxRetries,
-		},
+		DatabaseURL:    getRequiredEnv("DATABASE_URL"),
+		AccessType:     getEnv("ACCESS_TYPE", "pgx"),
+		Kafka:          loadKafkaConfig(),
+		RateLimit:      loadRateLimitConfig(),
 	}, nil
+}
+
+func getEnv(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
+}
+
+func getRequiredEnv(key string) string {
+	return os.Getenv(key)
+}
+
+func loadKafkaConfig() KafkaConfig {
+	brokers := []string{"kafka-1:9092", "kafka-2:9092", "kafka-3:9092"}
+	if s := os.Getenv("KAFKA_BROKERS"); s != "" {
+		brokers = strings.Split(s, ",")
+	}
+
+	maxRetries := 3
+	if v, err := strconv.Atoi(os.Getenv("KAFKA_MAX_RETRIES")); err == nil {
+		maxRetries = v
+	}
+
+	return KafkaConfig{
+		Brokers:    brokers,
+		Topic:      getEnv("KAFKA_TOPIC", "link-updates"),
+		GroupID:    getEnv("KAFKA_GROUP_ID", "bot-consumer-group"),
+		DLQTopic:   getEnv("KAFKA_DLQ_TOPIC", "link-updates-dlq"),
+		MaxRetries: maxRetries,
+	}
+}
+
+func loadRateLimitConfig() RateLimitConfig {
+	rps := 10.0
+	if v, err := strconv.ParseFloat(os.Getenv("RATE_LIMIT_RPS"), 64); err == nil {
+		rps = v
+	}
+	burst := 20
+	if v, err := strconv.Atoi(os.Getenv("RATE_LIMIT_BURST")); err == nil {
+		burst = v
+	}
+	return RateLimitConfig{RPS: rps, Burst: burst}
 }

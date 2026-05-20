@@ -25,6 +25,16 @@ const (
 	defaultBatchSize          = 10
 	defaultOutboxPollInterval = 5 * time.Second
 	defaultCacheTTL           = 60 * time.Second
+
+	defaultResilienceTimeout = 10_000
+	defaultRetryAttempts     = 3
+	defaultRetryDelay        = 500
+	defaultCBWindowSize      = 10
+	defaultCBMinCalls        = 5
+	defaultCBFailureRate     = 50.0
+	defaultCBHalfOpen        = 5
+	defaultRateLimitRPS      = 10.0
+	defaultRateLimitBurst    = 20
 )
 
 var defaultKafkaBrokers = []string{"kafka-1:9092", "kafka-2:9092", "kafka-3:9092"}
@@ -43,7 +53,23 @@ type ValkeyConfig struct {
 	TTL      time.Duration
 }
 
-// Config holds scrapper application configuration.
+type ResilienceConfig struct {
+	Timeout           time.Duration
+	RetryAttempts     uint
+	RetryDelay        time.Duration
+	RetryableStatuses []int
+
+	CBSlidingWindowSize uint32
+	CBMinCalls          uint32
+	CBFailureRate       float64
+	CBHalfOpenCalls     uint32
+	CBWaitDuration      time.Duration
+
+	RateLimitRPS          float64
+	RateLimitBurst        int
+	UseExponentialBackoff bool
+}
+
 type Config struct {
 	BotURL             string
 	GitHubToken        string
@@ -58,6 +84,7 @@ type Config struct {
 	Kafka              KafkaConfig
 	OutboxPollInterval time.Duration
 	Valkey             ValkeyConfig
+	Resilience         ResilienceConfig
 }
 
 // Load reads configuration from environment variables.
@@ -88,7 +115,40 @@ func Load() (*Config, error) {
 		Kafka:              loadKafkaConfig(),
 		OutboxPollInterval: loadDuration("OUTBOX_POLL_INTERVAL_SECONDS", defaultOutboxPollInterval),
 		Valkey:             loadValkeyConfig(),
+		Resilience:         loadResilienceConfig(),
 	}, nil
+}
+
+func loadResilienceConfig() ResilienceConfig {
+	return ResilienceConfig{
+		Timeout:               time.Duration(loadInt("RESILIENCE_TIMEOUT_MS", defaultResilienceTimeout)) * time.Millisecond,
+		RetryAttempts:         uint(loadInt("RESILIENCE_RETRY_ATTEMPTS", defaultRetryAttempts)),
+		RetryDelay:            time.Duration(loadInt("RESILIENCE_RETRY_DELAY_MS", defaultRetryDelay)) * time.Millisecond,
+		RetryableStatuses:     loadRetryableStatuses(),
+		CBSlidingWindowSize:   uint32(loadInt("CB_SLIDING_WINDOW_SIZE", defaultCBWindowSize)),
+		CBMinCalls:            uint32(loadInt("CB_MIN_CALLS", defaultCBMinCalls)),
+		CBFailureRate:         loadFloat("CB_FAILURE_RATE", defaultCBFailureRate),
+		CBHalfOpenCalls:       uint32(loadInt("CB_HALF_OPEN_CALLS", defaultCBHalfOpen)),
+		CBWaitDuration:        loadDuration("CB_WAIT_DURATION_SECONDS", 1*time.Second),
+		RateLimitRPS:          loadFloat("RATE_LIMIT_RPS", defaultRateLimitRPS),
+		RateLimitBurst:        loadInt("RATE_LIMIT_BURST", defaultRateLimitBurst),
+		UseExponentialBackoff: os.Getenv("RETRY_EXPONENTIAL_BACKOFF") == "true",
+	}
+}
+
+func loadRetryableStatuses() []int {
+	s := os.Getenv("RETRY_STATUSES")
+	if s == "" {
+		return []int{500, 502, 503, 504}
+	}
+	parts := strings.Split(s, ",")
+	statuses := make([]int, 0, len(parts))
+	for _, p := range parts {
+		if v, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
+			statuses = append(statuses, v)
+		}
+	}
+	return statuses
 }
 
 func envOrDefault(key, def string) string {
@@ -101,6 +161,15 @@ func envOrDefault(key, def string) string {
 func loadInt(key string, def int) int {
 	if s := os.Getenv(key); s != "" {
 		if v, err := strconv.Atoi(s); err == nil {
+			return v
+		}
+	}
+	return def
+}
+
+func loadFloat(key string, def float64) float64 {
+	if s := os.Getenv(key); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
 			return v
 		}
 	}
