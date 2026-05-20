@@ -13,30 +13,29 @@ import (
 	"time"
 
 	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/resilience"
 	"golang.org/x/sync/errgroup"
 )
 
 // Client is a StackOverflow API client.
 type Client struct {
-	http    *http.Client
-	baseURL string
+	http      *http.Client
+	resilient *resilience.Client
+	baseURL   string
 }
 
-const defaultTimeout = 10 * time.Second
-
-// NewClient creates a new StackOverflow client.
-func NewClient() *Client {
+func NewClient(rc *resilience.Client) *Client {
 	return &Client{
-		http:    &http.Client{Timeout: defaultTimeout},
-		baseURL: "https://api.stackexchange.com/2.3",
+		http:      &http.Client{},
+		resilient: rc,
+		baseURL:   "https://api.stackexchange.com/2.3",
 	}
 }
-
-// NewClientWithBaseURL creates a client with custom base URL for testing.
 func NewClientWithBaseURL(baseURL string) *Client {
 	return &Client{
-		http:    &http.Client{Timeout: defaultTimeout},
-		baseURL: baseURL,
+		http:      &http.Client{},
+		resilient: newDefaultTestClient("so-test"),
+		baseURL:   baseURL,
 	}
 }
 
@@ -167,24 +166,9 @@ func (c *Client) Supports(url string) bool {
 func (c *Client) fetchQuestionMeta(ctx context.Context, questionID string) (string, time.Time, error) {
 	apiURL := fmt.Sprintf("%s/questions/%s?site=stackoverflow", c.baseURL, questionID)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("create request: %w", err)
-	}
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return "", time.Time{}, fmt.Errorf("do request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", time.Time{}, fmt.Errorf("so api error: %d", resp.StatusCode)
-	}
-
 	var result soQuestionResponse
-	if err = json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", time.Time{}, fmt.Errorf("decode response: %w", err)
+	if err := c.doSORequest(ctx, apiURL, &result); err != nil {
+		return "", time.Time{}, err
 	}
 
 	if len(result.Items) == 0 {
@@ -225,17 +209,18 @@ func parseStackOverflowQuestionID(url string) (string, error) {
 	parts := strings.Split(trimmed, "/")
 	if len(parts) < 1 || parts[0] == "" {
 		return "", errors.New("invalid stackoverflow url")
-
 	}
 	return parts[0], nil
 }
 
 func (c *Client) doSORequest(ctx context.Context, url string, target any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	resp, err := c.http.Do(req)
+	resp, err := c.resilient.Execute(ctx, func(ctx context.Context) (*http.Response, error) {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if reqErr != nil {
+			return nil, fmt.Errorf("create request: %w", reqErr)
+		}
+		return c.http.Do(req)
+	})
 	if err != nil {
 		return fmt.Errorf("do request: %w", err)
 	}
@@ -248,4 +233,23 @@ func (c *Client) doSORequest(ctx context.Context, url string, target any) error 
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
+}
+
+func newDefaultTestClient(name string) *resilience.Client {
+	const (
+		defaultTimeout     = 30
+		defaultMinCalls    = 1000
+		defaultFailureRate = 100.0
+	)
+	return resilience.NewClient(resilience.Config{
+		Timeout:           defaultTimeout * time.Second,
+		RetryAttempts:     1,
+		RetryDelay:        0,
+		RetryableStatuses: []int{500, 502, 503, 504},
+		CBName:            name,
+		CBMinCalls:        defaultMinCalls,
+		CBFailureRate:     defaultFailureRate,
+		CBHalfOpenCalls:   1,
+		CBWaitDuration:    time.Second,
+	})
 }

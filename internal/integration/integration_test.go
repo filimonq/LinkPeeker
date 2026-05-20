@@ -38,6 +38,9 @@ func (s *E2ESuite) SetupSuite() {
 
 	mockPort := s.startTgMock()
 	dockerNet, gateway := s.startDockerNetwork()
+
+	s.startValkeyNode(dockerNet.Name, "valkey-3")
+
 	s.dbURL = s.startPostgres(dockerNet.Name)
 	s.scrapperURL = s.startScrapper(dockerNet.Name)
 	s.botURL = s.startBot(dockerNet.Name, gateway, mockPort)
@@ -308,4 +311,25 @@ func (s *E2ESuite) printLogs(c testcontainers.Container) {
 func TestE2E(t *testing.T) {
 	t.Parallel()
 	suite.Run(t, new(E2ESuite))
+}
+
+func (s *E2ESuite) startValkeyNode(netName string, alias string) {
+	c, err := testcontainers.GenericContainer(s.ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:          "valkey/valkey:9.0-alpine",
+			Networks:       []string{netName},
+			NetworkAliases: map[string][]string{netName: {alias}},
+			Cmd: []string{
+				"valkey-server",
+				"--cluster-enabled", "yes",
+				"--cluster-config-file", "nodes.conf",
+				"--cluster-node-timeout", "5000",
+				"--appendonly", "yes",
+			},
+			WaitingFor: wait.ForListeningPort("6379/tcp"),
+		},
+		Started: true,
+	})
+	s.Require().NoError(err)
+	s.T().Cleanup(func() { _ = c.Terminate(s.ctx) })
 }

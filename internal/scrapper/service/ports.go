@@ -67,6 +67,7 @@ type BotNotifier interface {
 	SendUpdate(ctx context.Context, update pkgdomain.LinkUpdate) error
 }
 
+// Transactor runs a function inside a DB transaction.
 type Transactor interface {
 	WithinTransaction(ctx context.Context, fn func(ctx context.Context) error) error
 }
@@ -90,4 +91,14 @@ type OutboxRepository interface {
 	// MarkSent flips the entry status to 'sent'. Called only after the
 	// publisher has successfully delivered the message.
 	MarkSent(ctx context.Context, id int64) error
+}
+
+// LinkCache caches list-links results keyed by chat ID.
+type LinkCache interface {
+	// Get returns the cached links for a chat, or (nil, nil) on cache miss.
+	Get(ctx context.Context, chatID int64) ([]*link.WithTags, error)
+	// Set stores the links for a chat.
+	Set(ctx context.Context, chatID int64, links []*link.WithTags) error
+	// Invalidate removes the cached entry for a chat.
+	Invalidate(ctx context.Context, chatID int64) error
 }

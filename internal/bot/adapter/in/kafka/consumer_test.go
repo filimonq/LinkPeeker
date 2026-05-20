@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync/atomic"
@@ -39,6 +40,10 @@ func noopLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+func uniqueName(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
 func createTopic(t *testing.T, brokers []string, topic string) {
 	t.Helper()
 	conn, err := kafkago.DialLeader(context.Background(), "tcp", brokers[0], topic, 0)
@@ -63,11 +68,12 @@ func writeMsg(t *testing.T, brokers []string, topic string, value []byte) {
 func readFromDLQ(t *testing.T, brokers []string, dlqTopic string, timeout time.Duration) (kafkago.Message, bool) {
 	t.Helper()
 	r := kafkago.NewReader(kafkago.ReaderConfig{
-		Brokers:   brokers,
-		Topic:     dlqTopic,
-		Partition: 0,
-		MinBytes:  1,
-		MaxBytes:  10 * 1024 * 1024,
+		Brokers:     brokers,
+		Topic:       dlqTopic,
+		Partition:   0,
+		MinBytes:    1,
+		MaxBytes:    10 * 1024 * 1024,
+		StartOffset: kafkago.FirstOffset,
 	})
 	t.Cleanup(func() { _ = r.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -81,21 +87,21 @@ func readFromDLQ(t *testing.T, brokers []string, dlqTopic string, timeout time.D
 
 func TestConsumer_ValidMessage_Processed(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-valid", "test-consumer-valid-dlq"
+	topic, dlq := uniqueName("test-consumer-valid"), uniqueName("test-consumer-valid-dlq")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 
 	svc := &mockSvc{}
-	c := kafka.NewConsumer(brokers, topic, "cg-valid", dlq, 3, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-valid"), dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
-
-	update := pkgdomain.LinkUpdate{ID: 1, URL: "https://github.com/x/y", TgChatIDs: []int64{1}}
-	body, _ := json.Marshal(update)
-	writeMsg(t, brokers, topic, body)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
+
+	update := pkgdomain.LinkUpdate{ID: 1, URL: "https://github.com/x/y", TgChatIDs: []int64{1}}
+	body, _ := json.Marshal(update)
+	writeMsg(t, brokers, topic, body)
 
 	assert.Eventually(t, func() bool {
 		return svc.count.Load() >= 1
@@ -104,22 +110,22 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 
 func TestConsumer_InvalidJSON_SentToDLQ(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-badjson", "test-consumer-badjson-dlq"
+	topic, dlq := uniqueName("test-consumer-badjson"), uniqueName("test-consumer-badjson-dlq")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 
 	svc := &mockSvc{}
-	c := kafka.NewConsumer(brokers, topic, "cg-badjson", dlq, 3, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-badjson"), dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
-
-	writeMsg(t, brokers, topic, []byte("not json at all {{{"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
 
+	writeMsg(t, brokers, topic, []byte("not json at all {{{"))
+
 	// По требованиям: ошибка десериализации → сразу в DLQ
-	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 15*time.Second)
+	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 10*time.Second)
 	require.True(t, ok, "невалидный JSON должен попасть в DLQ")
 	assert.Equal(t, []byte("not json at all {{{"), dlqMsg.Value)
 	assert.Equal(t, int32(0), svc.count.Load(), "UpdateService не должен быть вызван")
@@ -127,25 +133,25 @@ func TestConsumer_InvalidJSON_SentToDLQ(t *testing.T) {
 
 func TestConsumer_ValidationError_SentToDLQ(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-validation", "test-consumer-validation-dlq"
+	topic, dlq := uniqueName("test-consumer-validation"), uniqueName("test-consumer-validation-dlq")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 
 	svc := &mockSvc{}
-	c := kafka.NewConsumer(brokers, topic, "cg-validation", dlq, 3, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-validation"), dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Start(ctx)
 
 	// URL пустой → ошибка валидации
 	invalid := pkgdomain.LinkUpdate{ID: 1, TgChatIDs: []int64{1}}
 	body, _ := json.Marshal(invalid)
 	writeMsg(t, brokers, topic, body)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go c.Start(ctx)
-
 	// По требованиям: ошибка валидации → сразу в DLQ
-	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 15*time.Second)
+	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 10*time.Second)
 	require.True(t, ok, "невалидное сообщение должно попасть в DLQ")
 	assert.Equal(t, body, dlqMsg.Value)
 	assert.Equal(t, int32(0), svc.count.Load())
@@ -153,7 +159,7 @@ func TestConsumer_ValidationError_SentToDLQ(t *testing.T) {
 
 func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-retry-dlq", "test-consumer-retry-dlq-dead"
+	topic, dlq := uniqueName("test-consumer-retry-dlq"), uniqueName("test-consumer-retry-dlq-dead")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 	const maxRetries = 2
@@ -162,18 +168,18 @@ func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
 		err:       errors.New("telegram api down"),
 		failTimes: maxRetries + 1,
 	}
-	c := kafka.NewConsumer(brokers, topic, "cg-retry-dlq", dlq, maxRetries, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-retry-dlq"), dlq, maxRetries, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
-
-	update := pkgdomain.LinkUpdate{ID: 2, URL: "https://github.com/x/y", TgChatIDs: []int64{1}}
-	body, _ := json.Marshal(update)
-	writeMsg(t, brokers, topic, body)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
 
-	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 30*time.Second)
+	update := pkgdomain.LinkUpdate{ID: 2, URL: "https://github.com/x/y", TgChatIDs: []int64{1}}
+	body, _ := json.Marshal(update)
+	writeMsg(t, brokers, topic, body)
+
+	dlqMsg, ok := readFromDLQ(t, brokers, dlq, 10*time.Second)
 	require.True(t, ok, "сообщение должно попасть в DLQ после исчерпания ретраев")
 	assert.Equal(t, body, dlqMsg.Value)
 
@@ -190,7 +196,7 @@ func TestConsumer_BusinessError_RetriedThenDLQ(t *testing.T) {
 
 func TestConsumer_BusinessError_SucceedsOnRetry(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
-	const topic, dlq = "test-consumer-retry-ok", "test-consumer-retry-ok-dead"
+	topic, dlq := uniqueName("test-consumer-retry-ok"), uniqueName("test-consumer-retry-ok-dead")
 	createTopic(t, brokers, topic)
 	createTopic(t, brokers, dlq)
 
@@ -198,16 +204,16 @@ func TestConsumer_BusinessError_SucceedsOnRetry(t *testing.T) {
 		err:       errors.New("temporary error"),
 		failTimes: 1,
 	}
-	c := kafka.NewConsumer(brokers, topic, "cg-retry-ok", dlq, 3, svc, noopLogger())
+	c := kafka.NewConsumer(brokers, topic, uniqueName("cg-retry-ok"), dlq, 3, svc, noopLogger())
 	t.Cleanup(func() { _ = c.Close() })
-
-	update := pkgdomain.LinkUpdate{ID: 3, URL: "https://github.com/x/z", TgChatIDs: []int64{1}}
-	body, _ := json.Marshal(update)
-	writeMsg(t, brokers, topic, body)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Start(ctx)
+
+	update := pkgdomain.LinkUpdate{ID: 3, URL: "https://github.com/x/z", TgChatIDs: []int64{1}}
+	body, _ := json.Marshal(update)
+	writeMsg(t, brokers, topic, body)
 
 	assert.Eventually(t, func() bool {
 		return svc.count.Load() >= 2
