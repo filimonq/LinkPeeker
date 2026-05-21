@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -21,6 +22,8 @@ type scrapperService struct {
 	tags        TagRepository
 	checkers    []LinkChecker
 	notifier    BotNotifier
+	outbox      OutboxRepository
+	cache       LinkCache
 	workerCount int
 	batchSize   int
 	tx          Transactor
@@ -60,6 +63,22 @@ func NewScrapperService(
 	}
 }
 
+// WithOutbox enables the Transactional Outbox pattern. When set, updates are
+// written to the outbox table (inside the same DB transaction as UpdateTime)
+// instead of being sent directly via the notifier.
+func WithOutbox(svc ScrapperService, outbox OutboxRepository) {
+	if s, ok := svc.(*scrapperService); ok {
+		s.outbox = outbox
+	}
+}
+
+// WithCache enables Valkey caching for ListLinks.
+func WithCache(svc ScrapperService, cache LinkCache) {
+	if s, ok := svc.(*scrapperService); ok {
+		s.cache = cache
+	}
+}
+
 func (s *scrapperService) RegisterChat(ctx context.Context, chatID int64) error {
 	if err := s.chats.Add(ctx, chatID); err != nil {
 		return fmt.Errorf("register chat: %w", err)
@@ -96,7 +115,7 @@ func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string,
 		return nil, link.ErrAlreadyExists
 	}
 
-	err = s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
+	if err = s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
 		if err = s.subs.Add(txCtx, chatID, l.ID); err != nil {
 			return fmt.Errorf("add subscription: %w", err)
 		}
@@ -106,11 +125,11 @@ func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string,
 			}
 		}
 		return nil
-	})
-
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("transaction failed: %w", err)
 	}
+
+	s.invalidateCache(ctx, chatID)
 
 	return &link.WithTags{Link: l, Tags: tags}, nil
 }
@@ -126,7 +145,7 @@ func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url stri
 
 	var result *link.WithTags
 
-	err = s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
+	if err = s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
 		l, tErr := s.links.FindByURL(txCtx, url)
 		if tErr != nil {
 			return fmt.Errorf("find link: %w", tErr)
@@ -144,11 +163,11 @@ func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url stri
 
 		result = &link.WithTags{Link: removedLink, Tags: fetchedTags}
 		return nil
-	})
-
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("transaction failed: %w", err)
 	}
+
+	s.invalidateCache(ctx, chatID)
 
 	return result, nil
 }
@@ -160,6 +179,18 @@ func (s *scrapperService) ListLinks(ctx context.Context, chatID int64) ([]*link.
 	}
 	if !exists {
 		return nil, chat.ErrNotFound
+	}
+
+	if s.cache != nil {
+		cached, cErr := s.cache.Get(ctx, chatID)
+		if cErr != nil {
+			slog.Warn("cache get failed, falling back to db",
+				slog.Int64("chat_id", chatID),
+				slog.String("err", cErr.Error()),
+			)
+		} else if cached != nil {
+			return cached, nil
+		}
 	}
 
 	links, err := s.subs.FindByChatID(ctx, chatID, defaultPageSize, 0)
@@ -175,6 +206,12 @@ func (s *scrapperService) ListLinks(ctx context.Context, chatID int64) ([]*link.
 	result := make([]*link.WithTags, len(links))
 	for i, l := range links {
 		result[i] = &link.WithTags{Link: l, Tags: allTags[l.ID]}
+	}
+
+	if s.cache != nil {
+		if cErr := s.cache.Set(ctx, chatID, result); cErr != nil {
+			slog.Warn("cache set failed", slog.Int64("chat_id", chatID), slog.String("err", cErr.Error()))
+		}
 	}
 
 	return result, nil
@@ -295,16 +332,43 @@ func (s *scrapperService) processSingleLink(ctx context.Context, l *link.Link) e
 		return fmt.Errorf("find chats: %w", err)
 	}
 
-	if len(chatIDs) > 0 {
-		update := pkgdomain.LinkUpdate{
-			ID:          int64(l.ID),
-			URL:         l.URL,
-			Description: formatDescription(info),
-			TgChatIDs:   chatIDs,
+	if len(chatIDs) == 0 {
+		return nil
+	}
+
+	update := pkgdomain.LinkUpdate{
+		ID:          int64(l.ID),
+		URL:         l.URL,
+		Description: formatDescription(info),
+		TgChatIDs:   chatIDs,
+	}
+
+	if s.outbox != nil {
+		// Transactional Outbox: write the event and update the link timestamp
+		// atomically. The poller will pick it up and forward to Kafka.
+		if txErr := s.tx.WithinTransaction(ctx, func(txCtx context.Context) error {
+			payload, jsonErr := json.Marshal(update)
+			if jsonErr != nil {
+				return fmt.Errorf("marshal update for outbox: %w", jsonErr)
+			}
+
+			if addErr := s.outbox.Add(txCtx, payload); addErr != nil {
+				return fmt.Errorf("write to outbox: %w", addErr)
+			}
+
+			if timeErr := s.links.UpdateTime(txCtx, l.ID, info.UpdatedAt); timeErr != nil {
+				return fmt.Errorf("update link time: %w", timeErr)
+			}
+
+			return nil
+		}); txErr != nil {
+			return fmt.Errorf("outbox transaction: %w", txErr)
 		}
-		if err = s.notifier.SendUpdate(ctx, update); err != nil {
-			return fmt.Errorf("send update: %w", err)
-		}
+		return nil
+	}
+
+	if err = s.notifier.SendUpdate(ctx, update); err != nil {
+		return fmt.Errorf("send update: %w", err)
 	}
 
 	if err = s.links.UpdateTime(ctx, l.ID, info.UpdatedAt); err != nil {
@@ -314,7 +378,16 @@ func (s *scrapperService) processSingleLink(ctx context.Context, l *link.Link) e
 	return nil
 }
 
-// formatDescription builds a human-readable update message from UpdateInfo.
+// invalidateCache removes the cached entry for a chat (best-effort).
+func (s *scrapperService) invalidateCache(ctx context.Context, chatID int64) {
+	if s.cache == nil {
+		return
+	}
+	if err := s.cache.Invalidate(ctx, chatID); err != nil {
+		slog.Warn("cache invalidate failed", slog.Int64("chat_id", chatID), slog.String("err", err.Error()))
+	}
+}
+
 func formatDescription(info *pkgdomain.UpdateInfo) string {
 	if info.Title == "" && info.Author == "" {
 		return "Обнаружены изменения"

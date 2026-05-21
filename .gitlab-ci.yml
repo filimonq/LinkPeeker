@@ -1,5 +1,7 @@
 ---
 workflow:
+  auto_cancel:
+    on_new_commit: interruptible
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
@@ -9,13 +11,17 @@ workflow:
 variables:
   GO_VERSION: "1.25"
   GO_LINTER_VERSION: "v2.10"
-  GOLANG_IMAGE: golang:${GO_VERSION}-alpine
+  PROXY: "gitlab.education.tbank.ru:443/backend-academy-go-2025/lecture-materials/dependency_proxy/containers"
+  GOLANG_IMAGE: "${PROXY}/golang:${GO_VERSION}-alpine"
+  GOLANGCI_IMAGE: "${PROXY}/golangci/golangci-lint:${GO_LINTER_VERSION}-alpine"
+  DOCKER_IMAGE: "${PROXY}/docker:latest"
   GOPATH: "$CI_PROJECT_DIR/.go"
-  GITLAB_DOCKER_PROXY: gitlab.education.tbank.ru:443/backend-academy-go-2025/lecture-materials/dependency_proxy/containers
+  GOCACHE: "$CI_PROJECT_DIR/.cache/go-build"
 
 cache:
   paths:
     - .go/pkg/mod/
+    - .cache/go-build/
 
 stages:
   - lint
@@ -24,7 +30,7 @@ stages:
 
 lint:
   stage: lint
-  image: golangci/golangci-lint:${GO_LINTER_VERSION}-alpine
+  image: ${GOLANGCI_IMAGE}
   script:
     - golangci-lint run -c .golangci.yml --timeout=5m
   rules:
@@ -42,12 +48,9 @@ test:
     - when: always
 
 integration_test:
-  image: docker
   stage: test
-  timeout: 15m
-  cache:
-    paths:
-      - .go/pkg/mod/
+  image: ${GOLANG_IMAGE}
+  timeout: 30m
   variables:
     DOCKER_HOST: tcp://docker:2376
     DOCKER_TLS_CERTDIR: "/certs"
@@ -59,10 +62,10 @@ integration_test:
     - name: docker:dind
       alias: docker
   before_script:
-    - apk add --no-cache go gcc musl-dev
+    - apk add --no-cache gcc musl-dev
     - export DOCKER_BUILDKIT=1
   script:
-    - go test -v ./internal/integration/...
+    - go test -v -tags integration -timeout 20m ./internal/integration ./internal/bot/adapter/in/kafka
   rules:
     - when: always
 

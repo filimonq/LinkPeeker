@@ -10,32 +10,33 @@ import (
 	"time"
 
 	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/resilience"
 )
 
 // Client is a GitHub API client.
 type Client struct {
-	http    *http.Client
-	baseURL string
-	token   string
+	http      *http.Client
+	resilient *resilience.Client
+	baseURL   string
+	token     string
 }
 
-const defaultTimeout = 10 * time.Second
-
-// NewClient creates a new GitHub client.
-func NewClient(token string) *Client {
+func NewClient(token string, rc *resilience.Client) *Client {
 	return &Client{
-		http:    &http.Client{Timeout: defaultTimeout},
-		baseURL: "https://api.github.com",
-		token:   token,
+		http:      &http.Client{},
+		resilient: rc,
+		baseURL:   "https://api.github.com",
+		token:     token,
 	}
 }
 
 // NewClientWithBaseURL creates a client with custom base URL for testing.
 func NewClientWithBaseURL(token, baseURL string) *Client {
 	return &Client{
-		http:    &http.Client{Timeout: defaultTimeout},
-		baseURL: baseURL,
-		token:   token,
+		http:      &http.Client{},
+		resilient: newDefaultTestClient("github-test"),
+		baseURL:   baseURL,
+		token:     token,
 	}
 }
 
@@ -94,12 +95,13 @@ func (c *Client) Supports(url string) bool {
 func (c *Client) fetchLatestIssueOrPR(ctx context.Context, owner, repo string) (*issueOrPRResponse, error) {
 	apiURL := fmt.Sprintf("%s/repos/%s/%s/issues?state=all&sort=updated&direction=desc&per_page=1", c.baseURL, owner, repo)
 
-	req, err := c.newRequest(ctx, apiURL)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.http.Do(req) //nolint:gosec // baseURL is trusted or hardcoded
+	resp, err := c.resilient.Execute(ctx, func(ctx context.Context) (*http.Response, error) {
+		req, reqErr := c.newRequest(ctx, apiURL)
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		return c.http.Do(req) //nolint:gosec // baseURL is trusted or hardcoded
+	})
 	if err != nil {
 		return nil, fmt.Errorf("do request: %w", err)
 	}
@@ -128,12 +130,13 @@ type repoResponse struct {
 func (c *Client) fetchRepoUpdatedAt(ctx context.Context, owner, repo string) (time.Time, error) {
 	apiURL := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, owner, repo)
 
-	req, err := c.newRequest(ctx, apiURL)
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	resp, err := c.http.Do(req) //nolint:gosec // baseURL is hardcoded
+	resp, err := c.resilient.Execute(ctx, func(ctx context.Context) (*http.Response, error) {
+		req, reqErr := c.newRequest(ctx, apiURL)
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		return c.http.Do(req) //nolint:gosec // baseURL is hardcoded
+	})
 	if err != nil {
 		return time.Time{}, fmt.Errorf("do request: %w", err)
 	}
@@ -175,4 +178,23 @@ func parseGitHubOwnerRepo(url string) (owner, repo string, err error) {
 		return "", "", fmt.Errorf("invalid github url: %s", url)
 	}
 	return parts[0], parts[1], nil
+}
+
+func newDefaultTestClient(name string) *resilience.Client {
+	const (
+		defaultTimeout     = 30
+		defaultMinCalls    = 1000
+		defaultFailureRate = 100.0
+	)
+	return resilience.NewClient(resilience.Config{
+		Timeout:           defaultTimeout * time.Second,
+		RetryAttempts:     1,
+		RetryDelay:        0,
+		RetryableStatuses: []int{500, 502, 503, 504},
+		CBName:            name,
+		CBMinCalls:        defaultMinCalls,
+		CBFailureRate:     defaultFailureRate,
+		CBHalfOpenCalls:   1,
+		CBWaitDuration:    time.Second,
+	})
 }
