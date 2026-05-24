@@ -9,7 +9,11 @@ import (
 	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
 )
 
-const defaultPriority = "HIGH"
+const (
+	priorityHigh   = "HIGH"
+	priorityMedium = "MEDIUM"
+	priorityLow    = "LOW"
+)
 
 type FilteringConfig struct {
 	StopWords       []string
@@ -21,9 +25,15 @@ type SummarizationConfig struct {
 	Threshold int
 }
 
+type PrioritizationConfig struct {
+	HighKeywords []string
+	LowKeywords  []string
+}
+
 type Config struct {
-	Filtering     FilteringConfig
-	Summarization SummarizationConfig
+	Filtering      FilteringConfig
+	Summarization  SummarizationConfig
+	Prioritization PrioritizationConfig
 }
 
 type Processor struct {
@@ -48,7 +58,6 @@ func (p *Processor) Process(ctx context.Context, update pkgdomain.LinkUpdate) er
 	}
 
 	processed := update
-	processed.Priority = defaultPriority
 
 	if p.shouldSummarize(update.Description) {
 		summary, err := p.summarizer.Summarize(ctx, update.Description, p.cfg.Summarization.Threshold)
@@ -57,6 +66,7 @@ func (p *Processor) Process(ctx context.Context, update pkgdomain.LinkUpdate) er
 		}
 		processed.Description = summary
 	}
+	processed.Priority = p.resolvePriority(processed.Description)
 
 	if err := p.publisher.SendUpdate(ctx, processed); err != nil {
 		return fmt.Errorf("publish processed update: %w", err)
@@ -93,4 +103,28 @@ func (p *Processor) shouldDrop(update pkgdomain.LinkUpdate) bool {
 
 func (p *Processor) shouldSummarize(text string) bool {
 	return p.cfg.Summarization.Threshold > 0 && utf8.RuneCountInString(text) > p.cfg.Summarization.Threshold
+}
+
+func (p *Processor) resolvePriority(text string) string {
+	description := strings.ToLower(text)
+
+	for _, keyword := range p.cfg.Prioritization.HighKeywords {
+		if keyword == "" {
+			continue
+		}
+		if strings.Contains(description, strings.ToLower(keyword)) {
+			return priorityHigh
+		}
+	}
+
+	for _, keyword := range p.cfg.Prioritization.LowKeywords {
+		if keyword == "" {
+			continue
+		}
+		if strings.Contains(description, strings.ToLower(keyword)) {
+			return priorityLow
+		}
+	}
+
+	return priorityMedium
 }

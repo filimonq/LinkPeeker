@@ -114,7 +114,7 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 	update, ok := readProcessed(t, brokers, processedTopic, 15*time.Second)
 	require.True(t, ok, "валидное сообщение должно попасть в processed topic")
 	assert.Equal(t, int64(1), update.ID)
-	assert.Equal(t, "HIGH", update.Priority)
+	assert.Equal(t, "MEDIUM", update.Priority)
 	assert.Equal(t, "user", update.Author)
 }
 

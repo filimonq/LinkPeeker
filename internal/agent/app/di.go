@@ -17,6 +17,7 @@ import (
 type Container struct {
 	KafkaConsumer *kafkaconsumer.Consumer
 	KafkaProducer *kafkaproducer.Producer
+	Grouper       *service.Grouper
 }
 
 // NewContainer builds and wires all dependencies.
@@ -26,6 +27,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
+	grouper := service.NewGrouper(time.Duration(cfg.Grouping.WindowMS)*time.Millisecond, producer)
 	processor := service.NewProcessor(service.Config{
 		Filtering: service.FilteringConfig{
 			StopWords:       cfg.Filtering.StopWords,
@@ -35,7 +37,11 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		Summarization: service.SummarizationConfig{
 			Threshold: cfg.Summarization.Threshold,
 		},
-	}, summarizer, producer)
+		Prioritization: service.PrioritizationConfig{
+			HighKeywords: cfg.Prioritization.HighKeywords,
+			LowKeywords:  cfg.Prioritization.LowKeywords,
+		},
+	}, summarizer, grouper)
 
 	consumer := kafkaconsumer.NewConsumer(
 		cfg.Kafka.Brokers,
@@ -48,6 +54,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	return &Container{
 		KafkaConsumer: consumer,
 		KafkaProducer: producer,
+		Grouper:       grouper,
 	}, nil
 }
 

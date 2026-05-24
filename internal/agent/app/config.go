@@ -59,6 +59,15 @@ type SummarizationConfig struct {
 	TimeoutSeconds int    `yaml:"-"`
 }
 
+type PrioritizationConfig struct {
+	HighKeywords []string `yaml:"high-keywords"`
+	LowKeywords  []string `yaml:"low-keywords"`
+}
+
+type GroupingConfig struct {
+	WindowMS int `yaml:"window-ms"`
+}
+
 type ResilienceConfig struct {
 	Timeout               time.Duration
 	RetryAttempts         uint
@@ -74,16 +83,20 @@ type ResilienceConfig struct {
 
 // Config holds AI agent application configuration.
 type Config struct {
-	Kafka         KafkaConfig
-	Filtering     FilteringConfig
-	Summarization SummarizationConfig
-	Resilience    ResilienceConfig
+	Kafka          KafkaConfig
+	Filtering      FilteringConfig
+	Summarization  SummarizationConfig
+	Prioritization PrioritizationConfig
+	Grouping       GroupingConfig
+	Resilience     ResilienceConfig
 }
 
 type yamlConfig struct {
 	AIAgent struct {
-		Filtering     FilteringConfig     `yaml:"filtering"`
-		Summarization SummarizationConfig `yaml:"summarization"`
+		Filtering      FilteringConfig      `yaml:"filtering"`
+		Summarization  SummarizationConfig  `yaml:"summarization"`
+		Prioritization PrioritizationConfig `yaml:"prioritization"`
+		Grouping       GroupingConfig       `yaml:"grouping"`
 	} `yaml:"ai-agent"`
 }
 
@@ -111,6 +124,13 @@ func Load() (*Config, error) {
 			Model:          loadSummarizerModel(fileConfig.AIAgent.Summarization.Provider),
 			Prompt:         getEnv("AI_AGENT_SUMMARIZER_PROMPT", defaultSummarizationPrompt),
 			TimeoutSeconds: getEnvInt("AI_AGENT_SUMMARIZER_TIMEOUT_SECONDS", defaultAISummarizerTimeoutSeconds),
+		},
+		Prioritization: PrioritizationConfig{
+			HighKeywords: fileConfig.AIAgent.Prioritization.HighKeywords,
+			LowKeywords:  fileConfig.AIAgent.Prioritization.LowKeywords,
+		},
+		Grouping: GroupingConfig{
+			WindowMS: fileConfig.AIAgent.Grouping.WindowMS,
 		},
 		Resilience: loadResilienceConfig(),
 	}, nil

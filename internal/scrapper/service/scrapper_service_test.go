@@ -188,7 +188,7 @@ func TestCheckUpdates_NoUpdateWhenNotChanged(t *testing.T) {
 	assert.Empty(t, notifier.updates)
 }
 
-func TestCheckUpdates_PreviewTruncatedTo200Chars(t *testing.T) {
+func TestCheckUpdates_PreviewTruncatedTo1000Chars(t *testing.T) {
 	chatRepo := memory.NewChatRepository()
 	linkRepo := memory.NewLinkRepository()
 	subsRepo := memory.NewSubscriptionRepository(linkRepo)
@@ -196,7 +196,7 @@ func TestCheckUpdates_PreviewTruncatedTo200Chars(t *testing.T) {
 	notifier := &mockNotifier{}
 
 	url := "https://github.com/user/repo"
-	longPreview := strings.Repeat("а", 300)
+	longPreview := strings.Repeat("а", 1100)
 	checker := &mockCheckerWithPreview{url: url, updated: time.Now().Add(time.Second), preview: longPreview}
 
 	svc := service.NewScrapperService(chatRepo, linkRepo, subsRepo, tagRepo, []service.LinkChecker{checker}, notifier, 1, 10, &mockTransactor{})
@@ -211,7 +211,7 @@ func TestCheckUpdates_PreviewTruncatedTo200Chars(t *testing.T) {
 	require.Len(t, notifier.updates, 1)
 	desc := notifier.updates[0].Description
 	runes := []rune(desc)
-	assert.LessOrEqual(t, len(runes), 300)
+	assert.LessOrEqual(t, len(runes), 1100)
 	assert.Contains(t, desc, "...")
 }
 

@@ -37,6 +37,9 @@ func (a *App) Run() error {
 	<-ctx.Done()
 	a.logger.Info("ai agent is shutting down")
 
+	if err = container.Grouper.Close(context.Background()); err != nil {
+		a.logger.Error("grouper close error", slog.String("error", err.Error()))
+	}
 	if err = container.KafkaConsumer.Close(); err != nil {
 		a.logger.Error("kafka consumer close error", slog.String("error", err.Error()))
 	}

@@ -102,7 +102,7 @@ func TestProcessor_PublishesValidUpdate(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, publisher.updates, 1)
-	assert.Equal(t, "HIGH", publisher.updates[0].Priority)
+	assert.Equal(t, "MEDIUM", publisher.updates[0].Priority)
 	assert.Equal(t, update.Description, publisher.updates[0].Description)
 }
 

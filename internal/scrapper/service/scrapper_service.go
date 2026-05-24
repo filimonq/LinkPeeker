@@ -31,6 +31,7 @@ type scrapperService struct {
 
 const defaultPageSize = 100
 const defaultWorkerCount = 5
+const descriptionPreviewMaxLen = 1000
 
 func NewScrapperService(
 	chats ChatRepository,
@@ -409,11 +410,10 @@ func formatDescription(info *pkgdomain.UpdateInfo) string {
 	if info.Preview != "" {
 		sb.WriteString("\n")
 
-		const maxLen = 200
 		previewRunes := []rune(info.Preview)
 
-		if len(previewRunes) > maxLen {
-			sb.WriteString(string(previewRunes[:197]))
+		if len(previewRunes) > descriptionPreviewMaxLen {
+			sb.WriteString(string(previewRunes[:descriptionPreviewMaxLen-3]))
 			sb.WriteString("...")
 		} else {
 			sb.WriteString(info.Preview)
