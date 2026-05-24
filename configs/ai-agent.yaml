@@ -9,3 +9,4 @@ ai-agent:
     min-length: 20
   summarization:
     threshold: 500
+    provider: stub
