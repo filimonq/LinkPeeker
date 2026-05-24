@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -13,16 +14,15 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/resilience"
 )
 
-const defaultOpenAIBaseURL = "https://api.openai.com/v1"
-
 const (
-	defaultOpenAITimeout       = 15 * time.Second
-	defaultOpenAIRetryAttempts = 3
-	defaultOpenAIRetryDelay    = 500 * time.Millisecond
-	defaultOpenAICBWindowSize  = 10
-	defaultOpenAICBHalfOpen    = 5
-	defaultOpenAIMinCalls      = 5
-	defaultOpenAIFailureRate   = 50.0
+	defaultOpenAITimeout          = 15 * time.Second
+	defaultOpenAIRetryAttempts    = 3
+	defaultOpenAIRetryDelay       = 500 * time.Millisecond
+	defaultOpenAICBWindowSize     = 10
+	defaultOpenAICBHalfOpen       = 5
+	defaultOpenAIMinCalls         = 5
+	defaultOpenAIFailureRate      = 50.0
+	defaultChatCompletionsBaseURL = "https://api.openai.com/v1"
 )
 
 // OpenAISummarizer calls an OpenAI-compatible chat completions API.
@@ -58,7 +58,7 @@ func NewOpenAISummarizer(
 	rc *resilience.Client,
 ) *OpenAISummarizer {
 	if strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultOpenAIBaseURL
+		baseURL = defaultChatCompletionsBaseURL
 	}
 	if timeout <= 0 {
 		timeout = defaultOpenAITimeout
@@ -79,41 +79,16 @@ func NewOpenAISummarizer(
 	}
 }
 
-func newOpenAISummarizerWithHTTPClient(
-	httpClient *http.Client,
-	rc *resilience.Client,
-	baseURL, apiKey, model, prompt string,
-) *OpenAISummarizer {
-	if strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultOpenAIBaseURL
-	}
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultOpenAITimeout}
-	}
-	if rc == nil {
-		rc = newDefaultResilientClient("openai-summarizer-test")
-	}
-
-	return &OpenAISummarizer{
-		http:    httpClient,
-		rc:      rc,
-		baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey:  apiKey,
-		model:   model,
-		prompt:  prompt,
-	}
-}
-
 // Summarize shortens text using a remote LLM and trims the response to threshold.
 func (s *OpenAISummarizer) Summarize(ctx context.Context, text string, threshold int) (string, error) {
 	if threshold <= 0 || len([]rune(text)) <= threshold {
 		return text, nil
 	}
 	if strings.TrimSpace(s.apiKey) == "" {
-		return "", errors.New("openai summarizer api key is empty")
+		return "", errors.New("remote summarizer api key is empty")
 	}
 	if strings.TrimSpace(s.model) == "" {
-		return "", errors.New("openai summarizer model is empty")
+		return "", errors.New("remote summarizer model is empty")
 	}
 
 	reqBody := openAIChatRequest{
@@ -157,7 +132,12 @@ func (s *OpenAISummarizer) Summarize(ctx context.Context, text string, threshold
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("summarization api status: %d", resp.StatusCode)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("summarization api status: %d (failed to read body: %w)", resp.StatusCode, readErr)
+		}
+
+		return "", fmt.Errorf("summarization api status: %d, body: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var decoded openAIChatResponse

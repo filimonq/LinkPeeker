@@ -8,5 +8,5 @@ ai-agent:
       - bot-user
     min-length: 20
   summarization:
-    threshold: 500
+    threshold: 100
     provider: stub

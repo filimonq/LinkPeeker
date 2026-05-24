@@ -17,6 +17,14 @@ const (
 	defaultGroupID                    = "ai-agent-consumer-group"
 	defaultConfigPath                 = "configs/ai-agent.yaml"
 	defaultAISummarizerTimeoutSeconds = 15
+	summarizerProviderStub            = "stub"
+	summarizerProviderOpenAI          = "openai"
+	summarizerProviderHuggingFace     = "huggingface"
+	defaultOpenAIBaseURL              = "https://api.openai.com/v1"
+	defaultOpenAIModel                = "gpt-4.1-mini"
+	defaultHuggingFaceBaseURL         = "https://router.huggingface.co/v1"
+	defaultHuggingFaceModel           = "google/gemma-2-2b-it"
+	defaultSummarizationPrompt        = "Summarize the following update in 2-3 sentences."
 
 	defaultResilienceTimeout = 10_000
 	defaultRetryAttempts     = 3
@@ -97,15 +105,45 @@ func Load() (*Config, error) {
 		},
 		Summarization: SummarizationConfig{
 			Threshold:      fileConfig.AIAgent.Summarization.Threshold,
-			Provider:       getEnv("AI_AGENT_SUMMARIZER_PROVIDER", fileConfig.AIAgent.Summarization.Provider),
-			BaseURL:        getEnv("AI_AGENT_SUMMARIZER_BASE_URL", "https://api.openai.com/v1"),
+			Provider:       loadSummarizerProvider(fileConfig.AIAgent.Summarization.Provider),
+			BaseURL:        loadSummarizerBaseURL(fileConfig.AIAgent.Summarization.Provider),
 			APIKey:         os.Getenv("AI_AGENT_SUMMARIZER_API_KEY"),
-			Model:          getEnv("AI_AGENT_SUMMARIZER_MODEL", "gpt-4.1-mini"),
-			Prompt:         getEnv("AI_AGENT_SUMMARIZER_PROMPT", "Summarize the following update in 2-3 sentences."),
+			Model:          loadSummarizerModel(fileConfig.AIAgent.Summarization.Provider),
+			Prompt:         getEnv("AI_AGENT_SUMMARIZER_PROMPT", defaultSummarizationPrompt),
 			TimeoutSeconds: getEnvInt("AI_AGENT_SUMMARIZER_TIMEOUT_SECONDS", defaultAISummarizerTimeoutSeconds),
 		},
 		Resilience: loadResilienceConfig(),
 	}, nil
+}
+
+func loadSummarizerProvider(fileProvider string) string {
+	return strings.ToLower(strings.TrimSpace(getEnv("AI_AGENT_SUMMARIZER_PROVIDER", fileProvider)))
+}
+
+func loadSummarizerBaseURL(fileProvider string) string {
+	if baseURL := os.Getenv("AI_AGENT_SUMMARIZER_BASE_URL"); baseURL != "" {
+		return baseURL
+	}
+
+	switch loadSummarizerProvider(fileProvider) {
+	case summarizerProviderHuggingFace:
+		return defaultHuggingFaceBaseURL
+	default:
+		return defaultOpenAIBaseURL
+	}
+}
+
+func loadSummarizerModel(fileProvider string) string {
+	if model := os.Getenv("AI_AGENT_SUMMARIZER_MODEL"); model != "" {
+		return model
+	}
+
+	switch loadSummarizerProvider(fileProvider) {
+	case summarizerProviderHuggingFace:
+		return defaultHuggingFaceModel
+	default:
+		return defaultOpenAIModel
+	}
 }
 
 func loadResilienceConfig() ResilienceConfig {

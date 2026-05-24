@@ -53,15 +53,15 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 
 func buildSummarizer(cfg *Config) (service.Summarizer, error) {
 	provider := strings.ToLower(strings.TrimSpace(cfg.Summarization.Provider))
-	if provider == "" || provider == "stub" {
+	if provider == "" || provider == summarizerProviderStub {
 		return service.NewStubSummarizer(), nil
 	}
 
-	if provider != "openai" {
+	if provider != summarizerProviderOpenAI && provider != summarizerProviderHuggingFace {
 		return nil, fmt.Errorf("unsupported summarizer provider: %s", cfg.Summarization.Provider)
 	}
 	if strings.TrimSpace(cfg.Summarization.APIKey) == "" {
-		return nil, errors.New("AI_AGENT_SUMMARIZER_API_KEY is required for openai summarizer")
+		return nil, errors.New("AI_AGENT_SUMMARIZER_API_KEY is required for remote summarizer")
 	}
 
 	return service.NewOpenAISummarizer(
@@ -70,7 +70,7 @@ func buildSummarizer(cfg *Config) (service.Summarizer, error) {
 		cfg.Summarization.Model,
 		cfg.Summarization.Prompt,
 		time.Duration(cfg.Summarization.TimeoutSeconds)*time.Second,
-		newResilientClient(cfg.Resilience, "ai-agent-openai-summarizer"),
+		newResilientClient(cfg.Resilience, "ai-agent-"+provider+"-summarizer"),
 	), nil
 }
 
