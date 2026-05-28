@@ -27,7 +27,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	grouper := service.NewGrouper(time.Duration(cfg.Grouping.WindowMS)*time.Millisecond, producer)
+	grouper := service.NewGrouper(time.Duration(cfg.Grouping.WindowMS)*time.Millisecond, producer, logger)
 	processor := service.NewProcessor(service.Config{
 		Filtering: service.FilteringConfig{
 			StopWords:       cfg.Filtering.StopWords,

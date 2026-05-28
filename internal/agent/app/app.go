@@ -30,18 +30,21 @@ func (a *App) Run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	consumerDone := make(chan struct{})
 	go func() {
+		defer close(consumerDone)
 		container.KafkaConsumer.Start(ctx)
 	}()
 
 	<-ctx.Done()
 	a.logger.Info("ai agent is shutting down")
 
-	if err = container.Grouper.Close(context.Background()); err != nil {
-		a.logger.Error("grouper close error", slog.String("error", err.Error()))
-	}
 	if err = container.KafkaConsumer.Close(); err != nil {
 		a.logger.Error("kafka consumer close error", slog.String("error", err.Error()))
+	}
+	<-consumerDone
+	if err = container.Grouper.Close(context.Background()); err != nil {
+		a.logger.Error("grouper close error", slog.String("error", err.Error()))
 	}
 	if err = container.KafkaProducer.Close(); err != nil {
 		a.logger.Error("kafka producer close error", slog.String("error", err.Error()))

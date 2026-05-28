@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -14,14 +15,17 @@ const (
 	priorityRankLow    = 1
 	priorityRankMedium = 2
 	priorityRankHigh   = 3
+	groupRetryDelay    = 1 * time.Second
 )
 
 type Grouper struct {
 	publisher Publisher
 	window    time.Duration
+	logger    *slog.Logger
 
 	mu      sync.Mutex
 	entries map[int64]*groupEntry
+	closed  bool
 }
 
 type groupEntry struct {
@@ -29,10 +33,15 @@ type groupEntry struct {
 	timer   *time.Timer
 }
 
-func NewGrouper(window time.Duration, publisher Publisher) *Grouper {
+func NewGrouper(window time.Duration, publisher Publisher, logger *slog.Logger) *Grouper {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	return &Grouper{
 		publisher: publisher,
 		window:    window,
+		logger:    logger,
 		entries:   make(map[int64]*groupEntry),
 	}
 }
@@ -51,6 +60,7 @@ func (g *Grouper) SendUpdate(_ context.Context, update pkgdomain.LinkUpdate) err
 
 func (g *Grouper) Close(ctx context.Context) error {
 	g.mu.Lock()
+	g.closed = true
 	pending := make(map[int64][]pkgdomain.LinkUpdate, len(g.entries))
 	for chatID, entry := range g.entries {
 		if entry.timer != nil {
@@ -73,6 +83,9 @@ func (g *Grouper) Close(ctx context.Context) error {
 func (g *Grouper) enqueue(chatID int64, update pkgdomain.LinkUpdate) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	if g.closed {
+		return
+	}
 
 	entry, ok := g.entries[chatID]
 	if !ok {
@@ -100,7 +113,34 @@ func (g *Grouper) flush(chatID int64) {
 	delete(g.entries, chatID)
 	g.mu.Unlock()
 
-	_ = g.publishGrouped(context.Background(), chatID, updates)
+	if err := g.publishGrouped(context.Background(), chatID, updates); err != nil {
+		g.logger.Error("failed to publish grouped update",
+			slog.Int64("chat_id", chatID),
+			slog.String("err", err.Error()),
+		)
+		g.requeue(chatID, updates, groupRetryDelay)
+	}
+}
+
+func (g *Grouper) requeue(chatID int64, updates []pkgdomain.LinkUpdate, delay time.Duration) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		return
+	}
+
+	entry, ok := g.entries[chatID]
+	if !ok {
+		entry = &groupEntry{}
+		g.entries[chatID] = entry
+	}
+
+	entry.updates = append(updates, entry.updates...)
+	if entry.timer == nil {
+		entry.timer = time.AfterFunc(delay, func() {
+			g.flush(chatID)
+		})
+	}
 }
 
 func (g *Grouper) publishGrouped(ctx context.Context, chatID int64, updates []pkgdomain.LinkUpdate) error {

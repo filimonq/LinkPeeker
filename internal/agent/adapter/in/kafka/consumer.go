@@ -69,13 +69,14 @@ func (c *Consumer) Start(ctx context.Context) {
 			continue
 		}
 
+		if err = c.reader.CommitMessages(ctx, msg); err != nil {
+			c.logger.Error("failed to commit message", slog.String("err", err.Error()))
+			continue
+		}
+
 		c.logger.Info("processed update successfully",
 			slog.Int64("offset", msg.Offset),
 		)
-
-		if err = c.reader.CommitMessages(ctx, msg); err != nil {
-			c.logger.Error("failed to commit message", slog.String("err", err.Error()))
-		}
 	}
 }
 

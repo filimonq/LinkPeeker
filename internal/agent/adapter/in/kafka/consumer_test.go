@@ -85,6 +85,8 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 
 	producer := kafkaproducer.NewProducer(brokers, processedTopic)
 	t.Cleanup(func() { _ = producer.Close() })
+	grouper := agentservice.NewGrouper(50*time.Millisecond, producer)
+	t.Cleanup(func() { _ = grouper.Close(context.Background()) })
 
 	processor := agentservice.NewProcessor(agentservice.Config{
 		Filtering: agentservice.FilteringConfig{
@@ -93,7 +95,11 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 		Summarization: agentservice.SummarizationConfig{
 			Threshold: 500,
 		},
-	}, agentservice.NewStubSummarizer(), producer)
+		Prioritization: agentservice.PrioritizationConfig{
+			HighKeywords: []string{"critical", "urgent", "breaking", "security"},
+			LowKeywords:  []string{"minor", "typo", "chore", "docs"},
+		},
+	}, agentservice.NewStubSummarizer(), grouper)
 
 	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-valid", processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
@@ -106,7 +112,7 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 		ID:          1,
 		URL:         "https://github.com/x/y",
 		Author:      "user",
-		Description: "This update text is definitely valid",
+		Description: "This is a critical update text that is definitely valid",
 		TgChatIDs:   []int64{1, 2},
 	})
 	writeMsg(t, brokers, rawTopic, body)
@@ -114,7 +120,7 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 	update, ok := readProcessed(t, brokers, processedTopic, 15*time.Second)
 	require.True(t, ok, "валидное сообщение должно попасть в processed topic")
 	assert.Equal(t, int64(1), update.ID)
-	assert.Equal(t, "MEDIUM", update.Priority)
+	assert.Equal(t, "HIGH", update.Priority)
 	assert.Equal(t, "user", update.Author)
 }
 
@@ -127,6 +133,8 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 
 	producer := kafkaproducer.NewProducer(brokers, processedTopic)
 	t.Cleanup(func() { _ = producer.Close() })
+	grouper := agentservice.NewGrouper(50*time.Millisecond, producer)
+	t.Cleanup(func() { _ = grouper.Close(context.Background()) })
 
 	processor := agentservice.NewProcessor(agentservice.Config{
 		Filtering: agentservice.FilteringConfig{
@@ -135,7 +143,7 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 		Summarization: agentservice.SummarizationConfig{
 			Threshold: 500,
 		},
-	}, agentservice.NewStubSummarizer(), producer)
+	}, agentservice.NewStubSummarizer(), grouper)
 
 	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-invalid", processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
@@ -148,4 +156,46 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 
 	_, ok := readProcessed(t, brokers, processedTopic, 3*time.Second)
 	assert.False(t, ok, "невалидный JSON не должен публиковаться в processed topic")
+}
+
+func TestConsumer_FilteredMessage_NotPublished(t *testing.T) {
+	brokers := integration.GetTestKafka(t)
+	const rawTopic = "test-agent-filtered"
+	const processedTopic = "test-agent-filtered-processed"
+	createTopic(t, brokers, rawTopic)
+	createTopic(t, brokers, processedTopic)
+
+	producer := kafkaproducer.NewProducer(brokers, processedTopic)
+	t.Cleanup(func() { _ = producer.Close() })
+	grouper := agentservice.NewGrouper(50*time.Millisecond, producer)
+	t.Cleanup(func() { _ = grouper.Close(context.Background()) })
+
+	processor := agentservice.NewProcessor(agentservice.Config{
+		Filtering: agentservice.FilteringConfig{
+			StopWords: []string{"spam"},
+			MinLength: 1,
+		},
+		Summarization: agentservice.SummarizationConfig{
+			Threshold: 500,
+		},
+	}, agentservice.NewStubSummarizer(), grouper)
+
+	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-filtered", processor, noopLogger())
+	t.Cleanup(func() { _ = consumer.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go consumer.Start(ctx)
+
+	body, _ := json.Marshal(pkgdomain.LinkUpdate{
+		ID:          2,
+		URL:         "https://github.com/x/z",
+		Author:      "user",
+		Description: "this message contains spam and should be filtered",
+		TgChatIDs:   []int64{1},
+	})
+	writeMsg(t, brokers, rawTopic, body)
+
+	_, ok := readProcessed(t, brokers, processedTopic, 3*time.Second)
+	assert.False(t, ok, "отфильтрованное сообщение не должно попадать в processed topic")
 }

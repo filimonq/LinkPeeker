@@ -36,6 +36,10 @@ func newProcessor(publisher *mockPublisher) *service.Processor {
 		Summarization: service.SummarizationConfig{
 			Threshold: 40,
 		},
+		Prioritization: service.PrioritizationConfig{
+			HighKeywords: []string{"critical", "urgent", "security"},
+			LowKeywords:  []string{"minor", "typo", "docs"},
+		},
 	}, service.NewStubSummarizer(), publisher)
 }
 
@@ -104,6 +108,40 @@ func TestProcessor_PublishesValidUpdate(t *testing.T) {
 	require.Len(t, publisher.updates, 1)
 	assert.Equal(t, "MEDIUM", publisher.updates[0].Priority)
 	assert.Equal(t, update.Description, publisher.updates[0].Description)
+}
+
+func TestProcessor_PrioritizesHighKeyword(t *testing.T) {
+	publisher := &mockPublisher{}
+	processor := newProcessor(publisher)
+
+	err := processor.Process(context.Background(), pkgdomain.LinkUpdate{
+		ID:          1,
+		URL:         "https://example.com",
+		Author:      "user",
+		Description: "This is a critical update for the system",
+		TgChatIDs:   []int64{1},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, publisher.updates, 1)
+	assert.Equal(t, "HIGH", publisher.updates[0].Priority)
+}
+
+func TestProcessor_PrioritizesLowKeyword(t *testing.T) {
+	publisher := &mockPublisher{}
+	processor := newProcessor(publisher)
+
+	err := processor.Process(context.Background(), pkgdomain.LinkUpdate{
+		ID:          1,
+		URL:         "https://example.com",
+		Author:      "user",
+		Description: "This update only fixes a typo in docs",
+		TgChatIDs:   []int64{1},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, publisher.updates, 1)
+	assert.Equal(t, "LOW", publisher.updates[0].Priority)
 }
 
 func TestProcessor_SummarizesLongText(t *testing.T) {
