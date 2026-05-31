@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Server is an HTTP server for scrapper.
@@ -12,9 +15,12 @@ type Server struct {
 	server *http.Server
 }
 
-func NewServer(addr string, handler *Handler, middlewares ...func(http.Handler) http.Handler) *Server {
+func NewServer(addr string, handler *Handler, registry *prometheus.Registry, middlewares ...func(http.Handler) http.Handler) *Server {
 	mux := http.NewServeMux()
 	handler.RegisterRoutes(mux)
+	if registry != nil {
+		mux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	}
 
 	var h http.Handler = mux
 	for i := len(middlewares) - 1; i >= 0; i-- {

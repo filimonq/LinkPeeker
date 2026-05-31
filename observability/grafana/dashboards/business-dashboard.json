@@ -1,0 +1,245 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+          "expr": "sum(rate(command_requests_total{job=~\"$service_type\",command=\"message\"}[5m]))",
+          "legendFormat": "user messages",
+          "refId": "A"
+        }
+      ],
+      "title": "User Messages Per Second",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "expr": "sum(links_on_track_total{job=~\"$service_type\"}) by (tracked_source)",
+          "legendFormat": "{{tracked_source}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Tracked Links By Source",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(request_duration_ms_total_bucket{job=~\"$service_type\",scope=\"external_source\"}[5m])) by (le, scope_type))",
+          "legendFormat": "{{scope_type}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(request_duration_ms_total_bucket{job=~\"$service_type\",scope=\"external_source\"}[5m])) by (le, scope_type))",
+          "legendFormat": "{{scope_type}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(request_duration_ms_total_bucket{job=~\"$service_type\",scope=\"external_source\"}[5m])) by (le, scope_type))",
+          "legendFormat": "{{scope_type}} p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Scrape Duration Percentiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(command_duration_ms_total_bucket{job=~\"$service_type\",scope=\"command\"}[5m])) by (le, scope_type))",
+          "legendFormat": "{{scope_type}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(command_duration_ms_total_bucket{job=~\"$service_type\",scope=\"command\"}[5m])) by (le, scope_type))",
+          "legendFormat": "{{scope_type}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(command_duration_ms_total_bucket{job=~\"$service_type\",scope=\"command\"}[5m])) by (le, scope_type))",
+          "legendFormat": "{{scope_type}} p99",
+          "refId": "C"
+        }
+      ],
+      "title": "Bot Command Duration Percentiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "targets": [
+        {
+          "expr": "sum(rate(command_requests_total{job=~\"$service_type\"}[5m])) by (command)",
+          "legendFormat": "{{command}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Telegram Requests To Bot",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 6,
+      "targets": [
+        {
+          "expr": "sum(rate(sent_notification_total{job=~\"$service_type\"}[5m]))",
+          "legendFormat": "notifications",
+          "refId": "A"
+        }
+      ],
+      "title": "Sent Notifications",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "tags": [
+    "business",
+    "link-tracker"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": ".*",
+          "value": ".*"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "Application Type",
+        "multi": true,
+        "name": "service_type",
+        "options": [],
+        "query": "bot,scrapper",
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "title": "Link Tracker Business Metrics",
+  "uid": "link-tracker-business",
+  "version": 1
+}

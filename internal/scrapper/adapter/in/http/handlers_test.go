@@ -31,7 +31,7 @@ func newTestScrapperServer() *httptest.Server {
 	transactor := &mockTransactor{}
 	svc := service.NewScrapperService(chatRepo, linkRepo, memory.NewSubscriptionRepository(linkRepo), tagRepo, nil, nil, 4, 10, transactor)
 	handler := scrapperhttp.NewHandler(svc, slog.Default())
-	server := scrapperhttp.NewServer(":0", handler)
+	server := scrapperhttp.NewServer(":0", handler, nil)
 	return httptest.NewServer(server.Handler())
 }
 

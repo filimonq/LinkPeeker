@@ -27,6 +27,7 @@ type Config struct {
 	TelegramToken  string
 	ScrapperURL    string
 	Port           string
+	MetricsPort    string
 	TelegramAPIURL string // для test containers
 	DatabaseURL    string
 	AccessType     string // "pgx" or "squirrel"
@@ -52,6 +53,7 @@ func Load() (*Config, error) {
 		TelegramToken:  token,
 		ScrapperURL:    scrapperURL,
 		Port:           getEnv("BOT_PORT", "8080"),
+		MetricsPort:    getEnv("BOT_METRICS_PORT", "8011"),
 		TelegramAPIURL: os.Getenv("TELEGRAM_API_URL"),
 		DatabaseURL:    getRequiredEnv("DATABASE_URL"),
 		AccessType:     getEnv("ACCESS_TYPE", "pgx"),

@@ -20,6 +20,7 @@ import (
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service/state"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/middleware"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/migrate"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/observability"
 )
 
 type Container struct {
@@ -27,41 +28,25 @@ type Container struct {
 	Registry      *telegram.Registry
 	Metas         []domain.CommandMeta
 	HTTPServer    *bothttp.Server
+	MetricsServer *observability.MetricsServer
 	KafkaConsumer *kafkaconsumer.Consumer
 }
 
 func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
-	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	metrics := observability.NewBotMetrics()
+	userRepo, err := buildUserRepo(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("connect to db: %w", err)
-	}
-	if err = migrate.Run(cfg.DatabaseURL, "database"); err != nil {
-		return nil, fmt.Errorf("run migrations: %w", err)
+		return nil, err
 	}
 
-	var userRepo service.UserRepository
-	switch cfg.AccessType {
-	case "squirrel":
-		userRepo = squirrelrepo.NewUserRepository(db)
-	case "pgx":
-		userRepo = pgxrepo.NewUserRepository(db)
-	default:
-		userRepo = memory.NewUserRepository()
+	tgClient, err := buildTelegramClient(cfg)
+	if err != nil {
+		return nil, err
 	}
 
-	var tgClient *tgbotapi.BotAPI
-	if cfg.TelegramAPIURL != "" {
-		tgClient, err = tgbotapi.NewBotAPIWithAPIEndpoint(cfg.TelegramToken, cfg.TelegramAPIURL+"/bot%s/%s")
-	} else {
-		tgClient, err = tgbotapi.NewBotAPI(cfg.TelegramToken)
-	}
+	scrapperClient, err := buildScrapperClient(cfg, metrics)
 	if err != nil {
-		return nil, fmt.Errorf("create tg client: %w", err)
-	}
-
-	scrapperClient, err := scrapperclient.NewClient(cfg.ScrapperURL)
-	if err != nil {
-		return nil, fmt.Errorf("create scrapper client: %w", err)
+		return nil, err
 	}
 
 	storage := state.NewStorage()
@@ -84,16 +69,19 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		}
 	}
 
-	bot := telegram.NewBot(tgClient, svc, logger)
+	bot := telegram.NewBot(tgClient, svc, logger, metrics)
 
 	updateSvc := service.NewUpdateService(bot)
+	updateSvc = service.InstrumentUpdateService(updateSvc, metrics)
 
 	httpHandler := bothttp.NewHandler(updateSvc, logger)
 	httpServer := bothttp.NewServer(
 		":"+cfg.Port,
 		httpHandler,
+		metrics.HTTPMiddleware(),
 		middleware.PerIPRateLimiter(cfg.RateLimit.RPS, cfg.RateLimit.Burst),
 	)
+	metricsServer := observability.NewMetricsServer(":"+cfg.MetricsPort, metrics.Registry)
 	consumer := kafkaconsumer.NewConsumer(
 		cfg.Kafka.Brokers, cfg.Kafka.Topic, cfg.Kafka.GroupID,
 		cfg.Kafka.DLQTopic, cfg.Kafka.MaxRetries,
@@ -105,6 +93,54 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		Registry:      telegram.NewRegistry(tgClient),
 		Metas:         metas,
 		HTTPServer:    httpServer,
+		MetricsServer: metricsServer,
 		KafkaConsumer: consumer,
 	}, nil
+}
+
+func buildUserRepo(cfg *Config) (service.UserRepository, error) {
+	db, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("connect to db: %w", err)
+	}
+	if err = migrate.Run(cfg.DatabaseURL, "database"); err != nil {
+		return nil, fmt.Errorf("run migrations: %w", err)
+	}
+
+	switch cfg.AccessType {
+	case "squirrel":
+		return squirrelrepo.NewUserRepository(db), nil
+	case "pgx":
+		return pgxrepo.NewUserRepository(db), nil
+	default:
+		return memory.NewUserRepository(), nil
+	}
+}
+
+func buildTelegramClient(cfg *Config) (*tgbotapi.BotAPI, error) {
+	var (
+		tgClient *tgbotapi.BotAPI
+		err      error
+	)
+
+	if cfg.TelegramAPIURL != "" {
+		tgClient, err = tgbotapi.NewBotAPIWithAPIEndpoint(cfg.TelegramToken, cfg.TelegramAPIURL+"/bot%s/%s")
+	} else {
+		tgClient, err = tgbotapi.NewBotAPI(cfg.TelegramToken)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("create tg client: %w", err)
+	}
+
+	return tgClient, nil
+}
+
+func buildScrapperClient(cfg *Config, metrics *observability.BotMetrics) (service.ScrapperClient, error) {
+	rawScrapperClient, err := scrapperclient.NewClient(cfg.ScrapperURL)
+	if err != nil {
+		return nil, fmt.Errorf("create scrapper client: %w", err)
+	}
+
+	var scrapperClient service.ScrapperClient = rawScrapperClient
+	return service.InstrumentScrapperClient(scrapperClient, metrics), nil
 }
