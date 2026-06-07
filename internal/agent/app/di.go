@@ -35,12 +35,13 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		Summarization: service.SummarizationConfig{
 			Threshold: cfg.Summarization.Threshold,
 		},
-	}, summarizer, producer)
+	}, summarizer, producer, logger)
 
 	consumer := kafkaconsumer.NewConsumer(
 		cfg.Kafka.Brokers,
 		cfg.Kafka.InputTopic,
 		cfg.Kafka.GroupID,
+		cfg.Kafka.DLQTopic,
 		processor,
 		logger,
 	)

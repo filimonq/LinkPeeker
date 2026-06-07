@@ -4,14 +4,22 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
 )
 
-const maxBytes = 10 * 1024 * 1024 // 10 MB
+const (
+	maxBytes       = 10 * 1024 * 1024 // 10 MB
+	fetchBaseDelay = 1 * time.Second
+	fetchMaxDelay  = 30 * time.Second
+)
+
+var errDeserialize = errors.New("deserialization error")
 
 // Processor handles incoming updates.
 type Processor interface {
@@ -21,12 +29,13 @@ type Processor interface {
 // Consumer reads raw updates from Kafka and forwards them to the processor.
 type Consumer struct {
 	reader    *kafka.Reader
+	dlqWriter *kafka.Writer
 	processor Processor
 	logger    *slog.Logger
 }
 
 // NewConsumer creates a new Kafka consumer.
-func NewConsumer(brokers []string, topic, groupID string, processor Processor, logger *slog.Logger) *Consumer {
+func NewConsumer(brokers []string, topic, groupID, dlqTopic string, processor Processor, logger *slog.Logger) *Consumer {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  brokers,
 		Topic:    topic,
@@ -35,8 +44,17 @@ func NewConsumer(brokers []string, topic, groupID string, processor Processor, l
 		MaxBytes: maxBytes,
 	})
 
+	dlqWriter := &kafka.Writer{
+		Addr:                   kafka.TCP(brokers...),
+		Topic:                  dlqTopic,
+		Balancer:               &kafka.Hash{},
+		AllowAutoTopicCreation: false,
+		RequiredAcks:           kafka.RequireAll,
+	}
+
 	return &Consumer{
 		reader:    reader,
+		dlqWriter: dlqWriter,
 		processor: processor,
 		logger:    logger,
 	}
@@ -45,6 +63,7 @@ func NewConsumer(brokers []string, topic, groupID string, processor Processor, l
 // Start begins consuming messages until ctx is cancelled.
 func (c *Consumer) Start(ctx context.Context) {
 	c.logger.Info("ai agent consumer started")
+	fetchDelay := fetchBaseDelay
 
 	for {
 		msg, err := c.reader.FetchMessage(ctx)
@@ -53,9 +72,23 @@ func (c *Consumer) Start(ctx context.Context) {
 				c.logger.Info("ai agent consumer stopped")
 				return
 			}
-			c.logger.Error("failed to fetch message", slog.String("err", err.Error()))
+			c.logger.Error("failed to fetch message",
+				slog.String("err", err.Error()),
+				slog.Duration("retry_in", fetchDelay),
+			)
+			select {
+			case <-ctx.Done():
+				c.logger.Info("ai agent consumer stopped")
+				return
+			case <-time.After(fetchDelay):
+			}
+			fetchDelay *= 2
+			if fetchDelay > fetchMaxDelay {
+				fetchDelay = fetchMaxDelay
+			}
 			continue
 		}
+		fetchDelay = fetchBaseDelay
 
 		shouldCommit, handleErr := c.handle(ctx, msg)
 		if handleErr != nil {
@@ -75,14 +108,22 @@ func (c *Consumer) Start(ctx context.Context) {
 
 		if err = c.reader.CommitMessages(ctx, msg); err != nil {
 			c.logger.Error("failed to commit message", slog.String("err", err.Error()))
+			continue
 		}
 	}
 }
 
 // Close closes the underlying Kafka reader.
 func (c *Consumer) Close() error {
-	if err := c.reader.Close(); err != nil {
-		return fmt.Errorf("close kafka reader: %w", err)
+	if c.reader != nil {
+		if err := c.reader.Close(); err != nil {
+			return fmt.Errorf("close kafka reader: %w", err)
+		}
+	}
+	if c.dlqWriter != nil {
+		if err := c.dlqWriter.Close(); err != nil {
+			return fmt.Errorf("close dlq writer: %w", err)
+		}
 	}
 	return nil
 }
@@ -94,6 +135,7 @@ func (c *Consumer) handle(ctx context.Context, msg kafka.Message) (bool, error) 
 			slog.String("err", err.Error()),
 			slog.Int64("offset", msg.Offset),
 		)
+		c.sendToDLQ(ctx, msg, err)
 		return true, nil
 	}
 
@@ -102,4 +144,24 @@ func (c *Consumer) handle(ctx context.Context, msg kafka.Message) (bool, error) 
 	}
 
 	return true, nil
+}
+
+func (c *Consumer) sendToDLQ(ctx context.Context, msg kafka.Message, reason error) {
+	if c.dlqWriter == nil {
+		c.logger.Warn("dlq writer is not configured, skipping dlq publish",
+			slog.String("reason", reason.Error()),
+		)
+		return
+	}
+
+	if err := c.dlqWriter.WriteMessages(ctx, kafka.Message{
+		Key:   msg.Key,
+		Value: msg.Value,
+		Headers: []kafka.Header{
+			{Key: "error", Value: []byte(fmt.Errorf("%w: %w", errDeserialize, reason).Error())},
+			{Key: "original-topic", Value: []byte(msg.Topic)},
+		},
+	}); err != nil {
+		c.logger.Error("failed to send message to DLQ", slog.String("err", err.Error()))
+	}
 }

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"unicode/utf8"
 
@@ -30,20 +31,31 @@ type Processor struct {
 	cfg        Config
 	summarizer Summarizer
 	publisher  Publisher
+	logger     *slog.Logger
 }
 
 // NewProcessor creates an AI agent processor.
-func NewProcessor(cfg Config, summarizer Summarizer, publisher Publisher) *Processor {
+func NewProcessor(cfg Config, summarizer Summarizer, publisher Publisher, logger *slog.Logger) *Processor {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	return &Processor{
 		cfg:        cfg,
 		summarizer: summarizer,
 		publisher:  publisher,
+		logger:     logger,
 	}
 }
 
 // Process filters, summarizes, and publishes updates.
 func (p *Processor) Process(ctx context.Context, update pkgdomain.LinkUpdate) error {
 	if p.shouldDrop(update) {
+		p.logger.Info("dropping update after filtering",
+			slog.Int64("id", update.ID),
+			slog.String("url", update.URL),
+			slog.String("author", update.Author),
+		)
 		return nil
 	}
 

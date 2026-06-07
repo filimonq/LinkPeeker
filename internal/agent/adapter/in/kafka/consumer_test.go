@@ -76,6 +76,29 @@ func readProcessed(t *testing.T, brokers []string, topic string, timeout time.Du
 	return update, true
 }
 
+func readRawMessage(t *testing.T, brokers []string, topic string, timeout time.Duration) (kafkago.Message, bool) {
+	t.Helper()
+	r := kafkago.NewReader(kafkago.ReaderConfig{
+		Brokers:     brokers,
+		Topic:       topic,
+		Partition:   0,
+		MinBytes:    1,
+		MaxBytes:    10 * 1024 * 1024,
+		StartOffset: kafkago.FirstOffset,
+	})
+	t.Cleanup(func() { _ = r.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	msg, err := r.ReadMessage(ctx)
+	if err != nil {
+		return kafkago.Message{}, false
+	}
+
+	return msg, true
+}
+
 func TestConsumer_ValidMessage_Processed(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
 	const rawTopic = "test-agent-raw"
@@ -93,9 +116,9 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 		Summarization: agentservice.SummarizationConfig{
 			Threshold: 500,
 		},
-	}, agentservice.NewStubSummarizer(), producer)
+	}, agentservice.NewStubSummarizer(), producer, noopLogger())
 
-	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-valid", processor, noopLogger())
+	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-valid", rawTopic+"-dlq", processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -135,9 +158,11 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 		Summarization: agentservice.SummarizationConfig{
 			Threshold: 500,
 		},
-	}, agentservice.NewStubSummarizer(), producer)
+	}, agentservice.NewStubSummarizer(), producer, noopLogger())
 
-	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-invalid", processor, noopLogger())
+	const dlqTopic = "test-agent-invalid-json-dlq"
+	createTopic(t, brokers, dlqTopic)
+	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-invalid", dlqTopic, processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -148,4 +173,8 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 
 	_, ok := readProcessed(t, brokers, processedTopic, 3*time.Second)
 	assert.False(t, ok, "невалидный JSON не должен публиковаться в processed topic")
+
+	msg, ok := readRawMessage(t, brokers, dlqTopic, 10*time.Second)
+	require.True(t, ok, "невалидный JSON должен уходить в DLQ")
+	assert.Equal(t, []byte("not json at all {{{"), msg.Value)
 }

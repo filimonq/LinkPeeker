@@ -36,7 +36,7 @@ func newProcessor(publisher *mockPublisher) *service.Processor {
 		Summarization: service.SummarizationConfig{
 			Threshold: 40,
 		},
-	}, service.NewStubSummarizer(), publisher)
+	}, service.NewStubSummarizer(), publisher, nil)
 }
 
 func TestProcessor_FiltersByStopWord(t *testing.T) {
