@@ -85,7 +85,7 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 
 	producer := kafkaproducer.NewProducer(brokers, processedTopic)
 	t.Cleanup(func() { _ = producer.Close() })
-	grouper := agentservice.NewGrouper(50*time.Millisecond, producer)
+	grouper := agentservice.NewGrouper(50*time.Millisecond, producer, noopLogger())
 	t.Cleanup(func() { _ = grouper.Close(context.Background()) })
 
 	processor := agentservice.NewProcessor(agentservice.Config{
@@ -133,7 +133,7 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 
 	producer := kafkaproducer.NewProducer(brokers, processedTopic)
 	t.Cleanup(func() { _ = producer.Close() })
-	grouper := agentservice.NewGrouper(50*time.Millisecond, producer)
+	grouper := agentservice.NewGrouper(50*time.Millisecond, producer, noopLogger())
 	t.Cleanup(func() { _ = grouper.Close(context.Background()) })
 
 	processor := agentservice.NewProcessor(agentservice.Config{
@@ -167,7 +167,7 @@ func TestConsumer_FilteredMessage_NotPublished(t *testing.T) {
 
 	producer := kafkaproducer.NewProducer(brokers, processedTopic)
 	t.Cleanup(func() { _ = producer.Close() })
-	grouper := agentservice.NewGrouper(50*time.Millisecond, producer)
+	grouper := agentservice.NewGrouper(50*time.Millisecond, producer, noopLogger())
 	t.Cleanup(func() { _ = grouper.Close(context.Background()) })
 
 	processor := agentservice.NewProcessor(agentservice.Config{

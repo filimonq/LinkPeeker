@@ -58,6 +58,7 @@ func (p *Processor) Process(ctx context.Context, update pkgdomain.LinkUpdate) er
 	}
 
 	processed := update
+	processed.Priority = p.resolvePriority(update.Description)
 
 	if p.shouldSummarize(update.Description) {
 		summary, err := p.summarizer.Summarize(ctx, update.Description, p.cfg.Summarization.Threshold)
@@ -66,7 +67,6 @@ func (p *Processor) Process(ctx context.Context, update pkgdomain.LinkUpdate) er
 		}
 		processed.Description = summary
 	}
-	processed.Priority = p.resolvePriority(processed.Description)
 
 	if err := p.publisher.SendUpdate(ctx, processed); err != nil {
 		return fmt.Errorf("publish processed update: %w", err)
