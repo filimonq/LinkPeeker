@@ -33,6 +33,7 @@ type Grouper struct {
 type groupEntry struct {
 	updates []pkgdomain.LinkUpdate
 	timer   *time.Timer
+	ctx     context.Context
 }
 
 func NewGrouper(window time.Duration, publisher Publisher, logger *slog.Logger) *Grouper {
@@ -53,14 +54,13 @@ func WithGrouperMetrics(g *Grouper, metrics *observability.AgentMetrics) {
 		g.metrics = metrics
 	}
 }
-
-func (g *Grouper) SendUpdate(_ context.Context, update pkgdomain.LinkUpdate) error {
+func (g *Grouper) SendUpdate(ctx context.Context, update pkgdomain.LinkUpdate) error {
 	if len(update.TgChatIDs) == 0 {
 		return nil
 	}
 
 	for _, chatID := range update.TgChatIDs {
-		g.enqueue(chatID, cloneForChat(update, chatID))
+		g.enqueue(ctx, chatID, cloneForChat(update, chatID))
 	}
 	if g.metrics != nil {
 		g.metrics.ObservePipelineEvent("group_enqueue", "success")
@@ -91,7 +91,7 @@ func (g *Grouper) Close(ctx context.Context) error {
 	return nil
 }
 
-func (g *Grouper) enqueue(chatID int64, update pkgdomain.LinkUpdate) {
+func (g *Grouper) enqueue(ctx context.Context, chatID int64, update pkgdomain.LinkUpdate) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.closed {
@@ -105,14 +105,15 @@ func (g *Grouper) enqueue(chatID int64, update pkgdomain.LinkUpdate) {
 	}
 
 	entry.updates = append(entry.updates, update)
+	entry.ctx = ctx
 	if entry.timer == nil {
 		entry.timer = time.AfterFunc(g.window, func() {
-			g.flush(chatID)
+			g.flush(ctx, chatID)
 		})
 	}
 }
 
-func (g *Grouper) flush(chatID int64) {
+func (g *Grouper) flush(fallbackCtx context.Context, chatID int64) {
 	g.mu.Lock()
 	entry, ok := g.entries[chatID]
 	if !ok {
@@ -121,19 +122,27 @@ func (g *Grouper) flush(chatID int64) {
 	}
 
 	updates := append([]pkgdomain.LinkUpdate(nil), entry.updates...)
+	ctx := entry.ctx
 	delete(g.entries, chatID)
 	g.mu.Unlock()
 
-	if err := g.publishGrouped(context.Background(), chatID, updates); err != nil {
+	if ctx == nil {
+		ctx = fallbackCtx
+	}
+	if ctx == nil {
+		ctx = context.TODO()
+	}
+
+	if err := g.publishGrouped(ctx, chatID, updates); err != nil {
 		g.logger.Error("failed to publish grouped update",
 			slog.Int64("chat_id", chatID),
 			slog.String("err", err.Error()),
 		)
-		g.requeue(chatID, updates, groupRetryDelay)
+		g.requeue(ctx, chatID, updates, groupRetryDelay)
 	}
 }
 
-func (g *Grouper) requeue(chatID int64, updates []pkgdomain.LinkUpdate, delay time.Duration) {
+func (g *Grouper) requeue(ctx context.Context, chatID int64, updates []pkgdomain.LinkUpdate, delay time.Duration) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.closed {
@@ -147,9 +156,10 @@ func (g *Grouper) requeue(chatID int64, updates []pkgdomain.LinkUpdate, delay ti
 	}
 
 	entry.updates = append(updates, entry.updates...)
+	entry.ctx = ctx
 	if entry.timer == nil {
 		entry.timer = time.AfterFunc(delay, func() {
-			g.flush(chatID)
+			g.flush(ctx, chatID)
 		})
 	}
 }

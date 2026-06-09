@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -43,14 +44,20 @@ type Processor struct {
 	summarizer Summarizer
 	publisher  Publisher
 	metrics    *observability.AgentMetrics
+	logger     *slog.Logger
 }
 
 // NewProcessor creates an AI agent processor.
-func NewProcessor(cfg Config, summarizer Summarizer, publisher Publisher) *Processor {
+func NewProcessor(cfg Config, summarizer Summarizer, publisher Publisher, logger *slog.Logger) *Processor {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	return &Processor{
 		cfg:        cfg,
 		summarizer: summarizer,
 		publisher:  publisher,
+		logger:     logger,
 	}
 }
 
@@ -73,17 +80,22 @@ func (p *Processor) Process(ctx context.Context, update pkgdomain.LinkUpdate) er
 		if p.metrics != nil {
 			p.metrics.ObservePipelineEvent("filter", "dropped")
 		}
+		p.logger.Info("dropping update after filtering",
+			slog.Int64("id", update.ID),
+			slog.String("url", update.URL),
+			slog.String("author", update.Author),
+		)
 		return nil
 	}
 
 	processed := update
+	processed.Priority = p.resolvePriority(update.Description)
 
 	description, err := p.summarizeIfNeeded(ctx, update.Description)
 	if err != nil {
 		return err
 	}
 	processed.Description = description
-	processed.Priority = p.resolvePriority(processed.Description)
 
 	if err = p.publisher.SendUpdate(ctx, processed); err != nil {
 		return fmt.Errorf("publish processed update: %w", err)

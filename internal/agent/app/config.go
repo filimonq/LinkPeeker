@@ -13,6 +13,7 @@ import (
 
 const (
 	defaultInputTopic                 = "link.raw-updates"
+	defaultDLQTopic                   = "link.raw-updates-dlq"
 	defaultOutputTopic                = "link.processed-updates"
 	defaultGroupID                    = "ai-agent-consumer-group"
 	defaultConfigPath                 = "configs/ai-agent.yaml"
@@ -39,6 +40,7 @@ const (
 type KafkaConfig struct {
 	Brokers     []string
 	InputTopic  string
+	DLQTopic    string
 	OutputTopic string
 	GroupID     string
 }
@@ -223,6 +225,7 @@ func loadKafkaConfig() KafkaConfig {
 	return KafkaConfig{
 		Brokers:     brokers,
 		InputTopic:  getEnv("AGENT_KAFKA_INPUT_TOPIC", defaultInputTopic),
+		DLQTopic:    getEnv("AGENT_KAFKA_DLQ_TOPIC", defaultDLQTopic),
 		OutputTopic: getEnv("AGENT_KAFKA_OUTPUT_TOPIC", defaultOutputTopic),
 		GroupID:     getEnv("AGENT_KAFKA_GROUP_ID", defaultGroupID),
 	}

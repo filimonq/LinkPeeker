@@ -46,13 +46,14 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 			HighKeywords: cfg.Prioritization.HighKeywords,
 			LowKeywords:  cfg.Prioritization.LowKeywords,
 		},
-	}, summarizer, grouper)
+	}, summarizer, grouper, logger)
 	service.WithProcessorMetrics(processor, metrics)
 
 	consumer := kafkaconsumer.NewConsumer(
 		cfg.Kafka.Brokers,
 		cfg.Kafka.InputTopic,
 		cfg.Kafka.GroupID,
+		cfg.Kafka.DLQTopic,
 		processor,
 		logger,
 	)

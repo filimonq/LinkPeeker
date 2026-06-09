@@ -42,6 +42,7 @@ services:
       AI_AGENT_CONFIG_PATH: configs/ai-agent.yaml
       AGENT_METRICS_PORT: 8012
       AGENT_KAFKA_INPUT_TOPIC: link.raw-updates
+      AGENT_KAFKA_DLQ_TOPIC: link.raw-updates-dlq
       AGENT_KAFKA_OUTPUT_TOPIC: link.processed-updates
       AGENT_KAFKA_GROUP_ID: ai-agent-consumer-group
     depends_on:
