@@ -18,6 +18,7 @@ const (
 	maxBytes       = 10 * 1024 * 1024 // 10 MB
 	fetchBaseDelay = 1 * time.Second
 	fetchMaxDelay  = 30 * time.Second
+	fetchBackoff   = 2
 )
 
 var errDeserialize = errors.New("deserialization error")
@@ -74,39 +75,15 @@ func (c *Consumer) Start(ctx context.Context) {
 	fetchDelay := fetchBaseDelay
 
 	for {
-		fetchStartedAt := time.Now()
-		msg, err := c.reader.FetchMessage(ctx)
-		if c.metrics != nil {
-			c.metrics.ObserveOperationDuration("kafka", "consumer_fetch", time.Since(fetchStartedAt))
+		msg, nextDelay, shouldStop := c.fetchNextMessage(ctx, fetchDelay)
+		if shouldStop {
+			return
 		}
-		if err != nil {
-			if ctx.Err() != nil {
-				c.logger.Info("ai agent consumer stopped")
-				return
-			}
-			if c.metrics != nil {
-				c.metrics.ObservePipelineEvent("fetch", "error")
-			}
-			c.logger.Error("failed to fetch message",
-				slog.String("err", err.Error()),
-				slog.Duration("retry_in", fetchDelay),
-			)
-			select {
-			case <-ctx.Done():
-				c.logger.Info("ai agent consumer stopped")
-				return
-			case <-time.After(fetchDelay):
-			}
-			fetchDelay *= 2
-			if fetchDelay > fetchMaxDelay {
-				fetchDelay = fetchMaxDelay
-			}
+		if nextDelay != fetchBaseDelay {
+			fetchDelay = nextDelay
 			continue
 		}
-		fetchDelay = fetchBaseDelay
-		if c.metrics != nil {
-			c.metrics.ObservePipelineEvent("fetch", "success")
-		}
+		fetchDelay = nextDelay
 
 		handleStartedAt := time.Now()
 		shouldCommit, handleErr := c.handle(ctx, msg)
@@ -127,18 +104,8 @@ func (c *Consumer) Start(ctx context.Context) {
 			continue
 		}
 
-		commitStartedAt := time.Now()
-		if err = c.reader.CommitMessages(ctx, msg); err != nil {
-			if c.metrics != nil {
-				c.metrics.ObserveOperationDuration("kafka", "consumer_commit", time.Since(commitStartedAt))
-				c.metrics.ObservePipelineEvent("commit", "error")
-			}
-			c.logger.Error("failed to commit message", slog.String("err", err.Error()))
+		if err := c.commitMessage(ctx, msg); err != nil {
 			continue
-		}
-		if c.metrics != nil {
-			c.metrics.ObserveOperationDuration("kafka", "consumer_commit", time.Since(commitStartedAt))
-			c.metrics.ObservePipelineEvent("commit", "success")
 		}
 
 		c.logger.Info("processed update successfully",
@@ -158,6 +125,68 @@ func (c *Consumer) Close() error {
 		if err := c.dlqWriter.Close(); err != nil {
 			return fmt.Errorf("close dlq writer: %w", err)
 		}
+	}
+	return nil
+}
+
+func (c *Consumer) fetchNextMessage(ctx context.Context, fetchDelay time.Duration) (kafka.Message, time.Duration, bool) {
+	fetchStartedAt := time.Now()
+	msg, err := c.reader.FetchMessage(ctx)
+	if c.metrics != nil {
+		c.metrics.ObserveOperationDuration("kafka", "consumer_fetch", time.Since(fetchStartedAt))
+	}
+	if err == nil {
+		if c.metrics != nil {
+			c.metrics.ObservePipelineEvent("fetch", "success")
+		}
+		return msg, fetchBaseDelay, false
+	}
+	if ctx.Err() != nil {
+		c.logger.Info("ai agent consumer stopped")
+		return kafka.Message{}, fetchDelay, true
+	}
+	if c.metrics != nil {
+		c.metrics.ObservePipelineEvent("fetch", "error")
+	}
+	c.logger.Error("failed to fetch message",
+		slog.String("err", err.Error()),
+		slog.Duration("retry_in", fetchDelay),
+	)
+
+	nextDelay, shouldStop := c.waitFetchRetry(ctx, fetchDelay)
+	return kafka.Message{}, nextDelay, shouldStop
+}
+
+func (c *Consumer) waitFetchRetry(ctx context.Context, fetchDelay time.Duration) (time.Duration, bool) {
+	select {
+	case <-ctx.Done():
+		c.logger.Info("ai agent consumer stopped")
+		return fetchDelay, true
+	case <-time.After(fetchDelay):
+	}
+
+	nextDelay := fetchDelay * fetchBackoff
+	if nextDelay > fetchMaxDelay {
+		nextDelay = fetchMaxDelay
+	}
+	return nextDelay, false
+}
+
+func (c *Consumer) commitMessage(ctx context.Context, msg kafka.Message) error {
+	commitStartedAt := time.Now()
+	err := c.reader.CommitMessages(ctx, msg)
+	if c.metrics != nil {
+		c.metrics.ObserveOperationDuration("kafka", "consumer_commit", time.Since(commitStartedAt))
+	}
+	if err != nil {
+		if c.metrics != nil {
+			c.metrics.ObservePipelineEvent("commit", "error")
+		}
+		c.logger.Error("failed to commit message", slog.String("err", err.Error()))
+		return fmt.Errorf("commit kafka message: %w", err)
+	}
+	if c.metrics != nil {
+		c.metrics.ObservePipelineEvent("commit", "success")
 	}
 	return nil
 }
