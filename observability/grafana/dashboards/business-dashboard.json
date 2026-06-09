@@ -208,6 +208,67 @@
       ],
       "title": "Sent Notifications",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 7,
+      "targets": [
+        {
+          "expr": "sum(rate(agent_pipeline_events_total{job=~\"$service_type\"}[5m])) by (stage, result)",
+          "legendFormat": "{{stage}} {{result}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Agent Pipeline Events",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 8,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(agent_operation_duration_ms_total_bucket{job=~\"$service_type\"}[5m])) by (le, scope, scope_type))",
+          "legendFormat": "{{scope}} {{scope_type}} p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(agent_operation_duration_ms_total_bucket{job=~\"$service_type\"}[5m])) by (le, scope, scope_type))",
+          "legendFormat": "{{scope}} {{scope_type}} p99",
+          "refId": "B"
+        }
+      ],
+      "title": "Agent Operation Duration Percentiles",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",
@@ -230,7 +291,7 @@
         "multi": true,
         "name": "service_type",
         "options": [],
-        "query": "bot,scrapper",
+        "query": "bot,scrapper,agent",
         "type": "custom"
       }
     ]
