@@ -47,6 +47,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		cfg.Kafka.Brokers,
 		cfg.Kafka.InputTopic,
 		cfg.Kafka.GroupID,
+		cfg.Kafka.DLQTopic,
 		processor,
 		logger,
 	)

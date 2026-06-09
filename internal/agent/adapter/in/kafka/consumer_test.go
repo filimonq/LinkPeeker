@@ -76,11 +76,36 @@ func readProcessed(t *testing.T, brokers []string, topic string, timeout time.Du
 	return update, true
 }
 
+func readRawMessage(t *testing.T, brokers []string, topic string, timeout time.Duration) (kafkago.Message, bool) {
+	t.Helper()
+	r := kafkago.NewReader(kafkago.ReaderConfig{
+		Brokers:     brokers,
+		Topic:       topic,
+		Partition:   0,
+		MinBytes:    1,
+		MaxBytes:    10 * 1024 * 1024,
+		StartOffset: kafkago.FirstOffset,
+	})
+	t.Cleanup(func() { _ = r.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	msg, err := r.ReadMessage(ctx)
+	if err != nil {
+		return kafkago.Message{}, false
+	}
+
+	return msg, true
+}
+
 func TestConsumer_ValidMessage_Processed(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
 	const rawTopic = "test-agent-raw"
+	const dlqTopic = "test-agent-raw-dlq"
 	const processedTopic = "test-agent-processed"
 	createTopic(t, brokers, rawTopic)
+	createTopic(t, brokers, dlqTopic)
 	createTopic(t, brokers, processedTopic)
 
 	producer := kafkaproducer.NewProducer(brokers, processedTopic)
@@ -101,7 +126,7 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 		},
 	}, agentservice.NewStubSummarizer(), grouper)
 
-	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-valid", processor, noopLogger())
+	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-valid", dlqTopic, processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -127,8 +152,10 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
 	const rawTopic = "test-agent-invalid-json"
+	const dlqTopic = "test-agent-invalid-json-dlq"
 	const processedTopic = "test-agent-invalid-json-processed"
 	createTopic(t, brokers, rawTopic)
+	createTopic(t, brokers, dlqTopic)
 	createTopic(t, brokers, processedTopic)
 
 	producer := kafkaproducer.NewProducer(brokers, processedTopic)
@@ -145,7 +172,7 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 		},
 	}, agentservice.NewStubSummarizer(), grouper)
 
-	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-invalid", processor, noopLogger())
+	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-invalid", dlqTopic, processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -156,13 +183,19 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 
 	_, ok := readProcessed(t, brokers, processedTopic, 3*time.Second)
 	assert.False(t, ok, "невалидный JSON не должен публиковаться в processed topic")
+
+	msg, ok := readRawMessage(t, brokers, dlqTopic, 10*time.Second)
+	require.True(t, ok, "невалидный JSON должен уходить в DLQ")
+	assert.Equal(t, []byte("not json at all {{{"), msg.Value)
 }
 
 func TestConsumer_FilteredMessage_NotPublished(t *testing.T) {
 	brokers := integration.GetTestKafka(t)
 	const rawTopic = "test-agent-filtered"
+	const dlqTopic = "test-agent-filtered-dlq"
 	const processedTopic = "test-agent-filtered-processed"
 	createTopic(t, brokers, rawTopic)
+	createTopic(t, brokers, dlqTopic)
 	createTopic(t, brokers, processedTopic)
 
 	producer := kafkaproducer.NewProducer(brokers, processedTopic)
@@ -180,7 +213,7 @@ func TestConsumer_FilteredMessage_NotPublished(t *testing.T) {
 		},
 	}, agentservice.NewStubSummarizer(), grouper)
 
-	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-filtered", processor, noopLogger())
+	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-filtered", dlqTopic, processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
