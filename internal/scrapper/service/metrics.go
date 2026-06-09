@@ -16,6 +16,7 @@ const (
 	scrapperScopeDatabase       = "database"
 	scrapperScopeExternalSource = "external_source"
 	scrapperScopeLLMAgent       = "llm_agent"
+	scrapperScopeKafka          = "kafka"
 )
 
 func WithMetrics(svc ScrapperService, metrics *observability.ScrapperMetrics) {
@@ -302,7 +303,7 @@ func (c *instrumentedLinkChecker) Supports(url string) bool {
 }
 
 func (n *instrumentedBotNotifier) SendUpdate(ctx context.Context, update pkgdomain.LinkUpdate) error {
-	return observeErr(n.metrics, scrapperScopeLLMAgent, n.scopeType, func() error {
+	return observeErr(n.metrics, scrapperScopeKafka, n.scopeType, func() error {
 		return n.next.SendUpdate(ctx, update)
 	})
 }

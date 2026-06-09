@@ -135,22 +135,22 @@
       "id": 4,
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(command_duration_ms_total_bucket{job=~\"$service_type\",scope=\"command\"}[5m])) by (le, scope_type))",
-          "legendFormat": "{{scope_type}} p50",
+          "expr": "histogram_quantile(0.50, sum(rate(command_duration_ms_total_bucket{job=~\"$service_type\",scope=~\"scrapper_sync_api|scrapper_async_api\"}[5m])) by (le, scope, scope_type))",
+          "legendFormat": "{{scope}} {{scope_type}} p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(command_duration_ms_total_bucket{job=~\"$service_type\",scope=\"command\"}[5m])) by (le, scope_type))",
-          "legendFormat": "{{scope_type}} p95",
+          "expr": "histogram_quantile(0.95, sum(rate(command_duration_ms_total_bucket{job=~\"$service_type\",scope=~\"scrapper_sync_api|scrapper_async_api\"}[5m])) by (le, scope, scope_type))",
+          "legendFormat": "{{scope}} {{scope_type}} p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(command_duration_ms_total_bucket{job=~\"$service_type\",scope=\"command\"}[5m])) by (le, scope_type))",
-          "legendFormat": "{{scope_type}} p99",
+          "expr": "histogram_quantile(0.99, sum(rate(command_duration_ms_total_bucket{job=~\"$service_type\",scope=~\"scrapper_sync_api|scrapper_async_api\"}[5m])) by (le, scope, scope_type))",
+          "legendFormat": "{{scope}} {{scope_type}} p99",
           "refId": "C"
         }
       ],
-      "title": "Bot Command Duration Percentiles",
+      "title": "Bot Scrapper API Duration Percentiles",
       "type": "timeseries"
     },
     {

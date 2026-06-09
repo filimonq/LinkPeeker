@@ -182,7 +182,7 @@ func buildContainer(
 		return nil, fmt.Errorf("create scheduler: %w", err)
 	}
 
-	grpcServer := scrappergrpc.NewServer(svc)
+	grpcServer := scrappergrpc.NewServer(svc, metrics)
 	return &Container{
 		Server:       server,
 		GRPCServer:   grpcServer,

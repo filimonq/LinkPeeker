@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	botScopeCommand         = "command"
-	botScopeScrapperSyncAPI = "scrapper_sync_api"
+	botScopeCommand          = "command"
+	botScopeScrapperSyncAPI  = "scrapper_sync_api"
+	botScopeScrapperAsyncAPI = "scrapper_async_api"
 )
 
 type instrumentedScrapperClient struct {
@@ -91,9 +92,11 @@ func (c *instrumentedScrapperClient) observeErr(scopeType string, fn func() erro
 }
 
 func (s *instrumentedUpdateService) SendUpdate(ctx context.Context, update pkgdomain.LinkUpdate) error {
+	start := time.Now()
 	if err := s.next.SendUpdate(ctx, update); err != nil {
 		return fmt.Errorf("observe send update: %w", err)
 	}
+	s.metrics.ObserveCommandDuration(botScopeScrapperAsyncAPI, "SendUpdate", time.Since(start))
 
 	for range update.TgChatIDs {
 		s.metrics.IncSentNotification()
