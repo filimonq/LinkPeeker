@@ -124,7 +124,7 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 			HighKeywords: []string{"critical", "urgent", "breaking", "security"},
 			LowKeywords:  []string{"minor", "typo", "chore", "docs"},
 		},
-	}, agentservice.NewStubSummarizer(), grouper)
+	}, agentservice.NewStubSummarizer(), grouper, noopLogger())
 	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-valid", dlqTopic, processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
 
@@ -169,7 +169,7 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 		Summarization: agentservice.SummarizationConfig{
 			Threshold: 500,
 		},
-	}, agentservice.NewStubSummarizer(), grouper)
+	}, agentservice.NewStubSummarizer(), grouper, noopLogger())
 	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-invalid", dlqTopic, processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
 
@@ -209,7 +209,7 @@ func TestConsumer_FilteredMessage_NotPublished(t *testing.T) {
 		Summarization: agentservice.SummarizationConfig{
 			Threshold: 500,
 		},
-	}, agentservice.NewStubSummarizer(), grouper)
+	}, agentservice.NewStubSummarizer(), grouper, noopLogger())
 
 	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-filtered", dlqTopic, processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
