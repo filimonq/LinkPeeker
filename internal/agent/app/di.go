@@ -41,7 +41,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 			HighKeywords: cfg.Prioritization.HighKeywords,
 			LowKeywords:  cfg.Prioritization.LowKeywords,
 		},
-	}, summarizer, grouper)
+	}, summarizer, grouper, logger)
 
 	consumer := kafkaconsumer.NewConsumer(
 		cfg.Kafka.Brokers,

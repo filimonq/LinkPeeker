@@ -40,7 +40,7 @@ func newProcessor(publisher *mockPublisher) *service.Processor {
 			HighKeywords: []string{"critical", "urgent", "security"},
 			LowKeywords:  []string{"minor", "typo", "docs"},
 		},
-	}, service.NewStubSummarizer(), publisher)
+	}, service.NewStubSummarizer(), publisher, nil)
 }
 
 func TestProcessor_FiltersByStopWord(t *testing.T) {

@@ -125,7 +125,6 @@ func TestConsumer_ValidMessage_Processed(t *testing.T) {
 			LowKeywords:  []string{"minor", "typo", "chore", "docs"},
 		},
 	}, agentservice.NewStubSummarizer(), grouper)
-
 	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-valid", dlqTopic, processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
 
@@ -171,7 +170,6 @@ func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
 			Threshold: 500,
 		},
 	}, agentservice.NewStubSummarizer(), grouper)
-
 	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-invalid", dlqTopic, processor, noopLogger())
 	t.Cleanup(func() { _ = consumer.Close() })
 
