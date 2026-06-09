@@ -98,12 +98,12 @@ func (g *Grouper) enqueue(ctx context.Context, chatID int64, update pkgdomain.Li
 	entry.ctx = ctx
 	if entry.timer == nil {
 		entry.timer = time.AfterFunc(g.window, func() {
-			g.flush(chatID, ctx)
+			g.flush(ctx, chatID)
 		})
 	}
 }
 
-func (g *Grouper) flush(chatID int64, fallbackCtx context.Context) {
+func (g *Grouper) flush(fallbackCtx context.Context, chatID int64) {
 	g.mu.Lock()
 	entry, ok := g.entries[chatID]
 	if !ok {
@@ -149,7 +149,7 @@ func (g *Grouper) requeue(ctx context.Context, chatID int64, updates []pkgdomain
 	entry.ctx = ctx
 	if entry.timer == nil {
 		entry.timer = time.AfterFunc(delay, func() {
-			g.flush(chatID, ctx)
+			g.flush(ctx, chatID)
 		})
 	}
 }
