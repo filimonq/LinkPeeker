@@ -19,6 +19,8 @@ const (
 	fetchBaseDelay = 1 * time.Second
 	fetchMaxDelay  = 30 * time.Second
 	fetchBackoff   = 2
+	dlqRetryDelay  = 200 * time.Millisecond
+	dlqMaxAttempts = 3
 )
 
 var errDeserialize = errors.New("deserialization error")
@@ -201,7 +203,9 @@ func (c *Consumer) handle(ctx context.Context, msg kafka.Message) (bool, error) 
 			slog.String("err", err.Error()),
 			slog.Int64("offset", msg.Offset),
 		)
-		c.sendToDLQ(ctx, msg, err)
+		if dlqErr := c.sendToDLQ(ctx, msg, err); dlqErr != nil {
+			return false, fmt.Errorf("send invalid message to dlq: %w", dlqErr)
+		}
 		return true, nil
 	}
 	if c.metrics != nil {
@@ -215,22 +219,46 @@ func (c *Consumer) handle(ctx context.Context, msg kafka.Message) (bool, error) 
 	return true, nil
 }
 
-func (c *Consumer) sendToDLQ(ctx context.Context, msg kafka.Message, reason error) {
+func (c *Consumer) sendToDLQ(ctx context.Context, msg kafka.Message, reason error) error {
 	if c.dlqWriter == nil {
 		c.logger.Warn("dlq writer is not configured, skipping dlq publish",
 			slog.String("reason", reason.Error()),
 		)
-		return
+		return nil
 	}
 
-	if err := c.dlqWriter.WriteMessages(ctx, kafka.Message{
+	dlqMessage := kafka.Message{
 		Key:   msg.Key,
 		Value: msg.Value,
 		Headers: []kafka.Header{
 			{Key: "error", Value: []byte(fmt.Errorf("%w: %w", errDeserialize, reason).Error())},
 			{Key: "original-topic", Value: []byte(msg.Topic)},
 		},
-	}); err != nil {
-		c.logger.Error("failed to send message to DLQ", slog.String("err", err.Error()))
 	}
+
+	var err error
+	for attempt := 1; attempt <= dlqMaxAttempts; attempt++ {
+		err = c.dlqWriter.WriteMessages(ctx, dlqMessage)
+		if err == nil {
+			return nil
+		}
+
+		c.logger.Warn("failed to send message to DLQ, retrying",
+			slog.String("err", err.Error()),
+			slog.Int("attempt", attempt),
+			slog.Int("max_attempts", dlqMaxAttempts),
+		)
+
+		if attempt == dlqMaxAttempts {
+			break
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("dlq publish canceled: %w", ctx.Err())
+		case <-time.After(dlqRetryDelay):
+		}
+	}
+
+	return fmt.Errorf("write message to dlq: %w", err)
 }
