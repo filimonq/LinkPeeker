@@ -1,0 +1,71 @@
+# RED dashboard
+
+# HTTP request rate by service
+sum(rate(http_server_requests_total{job=~"$app"}[5m])) by (job)
+
+# HTTP errors by service
+sum(rate(http_server_requests_total{job=~"$app",status=~"5..|4.."}[5m])) by (job, status)
+
+# HTTP p50 latency by route
+histogram_quantile(0.50, sum(rate(http_server_request_duration_seconds_bucket{job=~"$app"}[5m])) by (le, job, route))
+
+# HTTP p95 latency by route
+histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{job=~"$app"}[5m])) by (le, job, route))
+
+# HTTP p99 latency by route
+histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{job=~"$app"}[5m])) by (le, job, route))
+
+# gRPC request rate for scrapper
+sum(rate(grpc_server_requests_total{job="scrapper"}[5m])) by (method, status)
+
+# gRPC p95 latency
+histogram_quantile(0.95, sum(rate(grpc_server_request_duration_seconds_bucket{job="scrapper"}[5m])) by (le, method))
+
+# Memory panels
+process_resident_memory_bytes{job=~"$app"}
+process_virtual_memory_bytes{job=~"$app"}
+go_memstats_heap_alloc_bytes{job=~"$app"}
+
+# Business dashboard
+
+# User messages / bot commands per second
+sum(rate(command_requests_total{job="bot"}[5m])) by (command)
+
+# Tracked links by source
+links_on_track_total{job="scrapper"}
+
+# Scrape operation p50 by source
+histogram_quantile(0.50, sum(rate(request_duration_ms_total_bucket{job="scrapper",scope="external_source"}[5m])) by (le, scope_type))
+
+# Scrape operation p95 by source
+histogram_quantile(0.95, sum(rate(request_duration_ms_total_bucket{job="scrapper",scope="external_source"}[5m])) by (le, scope_type))
+
+# Scrape operation p99 by source
+histogram_quantile(0.99, sum(rate(request_duration_ms_total_bucket{job="scrapper",scope="external_source"}[5m])) by (le, scope_type))
+
+# Bot sync/async API p50
+histogram_quantile(0.50, sum(rate(command_duration_ms_total_bucket{job="bot",scope=~"scrapper_sync_api|scrapper_async_api"}[5m])) by (le, scope, scope_type))
+
+# Bot sync/async API p95
+histogram_quantile(0.95, sum(rate(command_duration_ms_total_bucket{job="bot",scope=~"scrapper_sync_api|scrapper_async_api"}[5m])) by (le, scope, scope_type))
+
+# Bot sync/async API p99
+histogram_quantile(0.99, sum(rate(command_duration_ms_total_bucket{job="bot",scope=~"scrapper_sync_api|scrapper_async_api"}[5m])) by (le, scope, scope_type))
+
+# Telegram / bot requests by route
+sum(rate(http_server_requests_total{job="bot"}[5m])) by (route, status)
+
+# Sent notifications
+sum(rate(sent_notification_total{job="bot"}[5m]))
+
+# Scrapper API requests
+sum(rate(api_requests_total{job="scrapper"}[5m])) by (source)
+
+# Scrapper internal/external/kafka operation latency p95
+histogram_quantile(0.95, sum(rate(request_duration_ms_total_bucket{job="scrapper"}[5m])) by (le, scope, scope_type))
+
+# Agent pipeline activity
+sum(rate(agent_pipeline_events_total{job="agent"}[5m])) by (stage, result)
+
+# Agent operation latency p95
+histogram_quantile(0.95, sum(rate(agent_operation_duration_ms_total_bucket{job="agent"}[5m])) by (le, scope, scope_type))

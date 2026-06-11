@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/observability"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/chat"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
 	"golang.org/x/sync/errgroup"
@@ -24,6 +25,7 @@ type scrapperService struct {
 	notifier    BotNotifier
 	outbox      OutboxRepository
 	cache       LinkCache
+	metrics     *observability.ScrapperMetrics
 	workerCount int
 	batchSize   int
 	tx          Transactor
@@ -31,6 +33,7 @@ type scrapperService struct {
 
 const defaultPageSize = 100
 const defaultWorkerCount = 5
+const descriptionPreviewMaxLen = 1000
 
 func NewScrapperService(
 	chats ChatRepository,
@@ -90,6 +93,7 @@ func (s *scrapperService) DeleteChat(ctx context.Context, chatID int64) error {
 	if err := s.chats.Remove(ctx, chatID); err != nil {
 		return fmt.Errorf("delete chat: %w", err)
 	}
+	s.refreshTrackedLinksMetric(ctx)
 	return nil
 }
 
@@ -130,6 +134,7 @@ func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string,
 	}
 
 	s.invalidateCache(ctx, chatID)
+	s.refreshTrackedLinksMetric(ctx)
 
 	return &link.WithTags{Link: l, Tags: tags}, nil
 }
@@ -168,6 +173,7 @@ func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url stri
 	}
 
 	s.invalidateCache(ctx, chatID)
+	s.refreshTrackedLinksMetric(ctx)
 
 	return result, nil
 }
@@ -340,6 +346,7 @@ func (s *scrapperService) processSingleLink(ctx context.Context, l *link.Link) e
 		ID:          int64(l.ID),
 		URL:         l.URL,
 		Description: formatDescription(info),
+		Author:      info.Author,
 		TgChatIDs:   chatIDs,
 	}
 
@@ -414,11 +421,10 @@ func formatDescription(info *pkgdomain.UpdateInfo) string {
 	if info.Preview != "" {
 		sb.WriteString("\n")
 
-		const maxLen = 200
 		previewRunes := []rune(info.Preview)
 
-		if len(previewRunes) > maxLen {
-			sb.WriteString(string(previewRunes[:197]))
+		if len(previewRunes) > descriptionPreviewMaxLen {
+			sb.WriteString(string(previewRunes[:descriptionPreviewMaxLen-3]))
 			sb.WriteString("...")
 		} else {
 			sb.WriteString(info.Preview)

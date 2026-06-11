@@ -20,7 +20,7 @@ const (
 	defaultPort               = "8081"
 	defaultGRPCPort           = "50051"
 	defaultAccessType         = "sql"
-	defaultKafkaTopic         = "link-updates"
+	defaultKafkaTopic         = "link.raw-updates"
 	defaultWorkerCount        = 4
 	defaultBatchSize          = 10
 	defaultOutboxPollInterval = 5 * time.Second
@@ -202,7 +202,7 @@ func loadKafkaConfig() KafkaConfig {
 	}
 	return KafkaConfig{
 		Brokers: brokers,
-		Topic:   envOrDefault("KAFKA_TOPIC", defaultKafkaTopic),
+		Topic:   envOrDefault("SCRAPPER_KAFKA_TOPIC", defaultKafkaTopic),
 	}
 }
 

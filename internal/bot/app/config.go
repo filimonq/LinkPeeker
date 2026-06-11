@@ -27,6 +27,7 @@ type Config struct {
 	TelegramToken  string
 	ScrapperURL    string
 	Port           string
+	MetricsPort    string
 	TelegramAPIURL string // для test containers
 	DatabaseURL    string
 	AccessType     string // "pgx" or "squirrel"
@@ -52,6 +53,7 @@ func Load() (*Config, error) {
 		TelegramToken:  token,
 		ScrapperURL:    scrapperURL,
 		Port:           getEnv("BOT_PORT", "8080"),
+		MetricsPort:    getEnv("BOT_METRICS_PORT", "8011"),
 		TelegramAPIURL: os.Getenv("TELEGRAM_API_URL"),
 		DatabaseURL:    getRequiredEnv("DATABASE_URL"),
 		AccessType:     getEnv("ACCESS_TYPE", "pgx"),
@@ -84,9 +86,9 @@ func loadKafkaConfig() KafkaConfig {
 
 	return KafkaConfig{
 		Brokers:    brokers,
-		Topic:      getEnv("KAFKA_TOPIC", "link-updates"),
-		GroupID:    getEnv("KAFKA_GROUP_ID", "bot-consumer-group"),
-		DLQTopic:   getEnv("KAFKA_DLQ_TOPIC", "link-updates-dlq"),
+		Topic:      getEnv("BOT_KAFKA_TOPIC", "link.processed-updates"),
+		GroupID:    getEnv("BOT_KAFKA_GROUP_ID", "bot-consumer-group"),
+		DLQTopic:   getEnv("BOT_KAFKA_DLQ_TOPIC", "link.processed-updates-dlq"),
 		MaxRetries: maxRetries,
 	}
 }

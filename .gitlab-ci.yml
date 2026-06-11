@@ -65,7 +65,7 @@ integration_test:
     - apk add --no-cache gcc musl-dev
     - export DOCKER_BUILDKIT=1
   script:
-    - go test -v -tags integration -timeout 20m ./internal/integration ./internal/bot/adapter/in/kafka
+    - go test -v -tags integration -timeout 20m ./internal/integration ./internal/bot/adapter/in/kafka ./internal/agent/adapter/in/kafka
   rules:
     - when: always
 

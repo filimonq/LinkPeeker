@@ -1,0 +1,255 @@
+//go:build integration
+
+package kafka_test
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"testing"
+	"time"
+
+	kafkago "github.com/segmentio/kafka-go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	kafkaconsumer "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/agent/adapter/in/kafka"
+	kafkaproducer "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/agent/adapter/out/kafka"
+	agentservice "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/agent/service"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/integration"
+	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
+)
+
+func noopLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func createTopic(t *testing.T, brokers []string, topic string) {
+	t.Helper()
+	conn, err := kafkago.DialLeader(context.Background(), "tcp", brokers[0], topic, 0)
+	require.NoError(t, err)
+	_ = conn.Close()
+}
+
+func writeMsg(t *testing.T, brokers []string, topic string, value []byte) {
+	t.Helper()
+	w := &kafkago.Writer{
+		Addr:                   kafkago.TCP(brokers...),
+		Topic:                  topic,
+		AllowAutoTopicCreation: true,
+		RequiredAcks:           kafkago.RequireOne,
+	}
+	t.Cleanup(func() { _ = w.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	require.NoError(t, w.WriteMessages(ctx, kafkago.Message{Value: value}))
+}
+
+func readProcessed(t *testing.T, brokers []string, topic string, timeout time.Duration) (pkgdomain.LinkUpdate, bool) {
+	t.Helper()
+	for _, partition := range topicPartitions(t, brokers, topic) {
+		r := kafkago.NewReader(kafkago.ReaderConfig{
+			Brokers:     brokers,
+			Topic:       topic,
+			Partition:   partition,
+			MinBytes:    1,
+			MaxBytes:    10 * 1024 * 1024,
+			StartOffset: kafkago.FirstOffset,
+		})
+		t.Cleanup(func() { _ = r.Close() })
+
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		msg, err := r.ReadMessage(ctx)
+		cancel()
+		if err != nil {
+			continue
+		}
+
+		var update pkgdomain.LinkUpdate
+		if err = json.Unmarshal(msg.Value, &update); err != nil {
+			continue
+		}
+
+		return update, true
+	}
+
+	return pkgdomain.LinkUpdate{}, false
+}
+
+func readRawMessage(t *testing.T, brokers []string, topic string, timeout time.Duration) (kafkago.Message, bool) {
+	t.Helper()
+	for _, partition := range topicPartitions(t, brokers, topic) {
+		r := kafkago.NewReader(kafkago.ReaderConfig{
+			Brokers:     brokers,
+			Topic:       topic,
+			Partition:   partition,
+			MinBytes:    1,
+			MaxBytes:    10 * 1024 * 1024,
+			StartOffset: kafkago.FirstOffset,
+		})
+		t.Cleanup(func() { _ = r.Close() })
+
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		msg, err := r.ReadMessage(ctx)
+		cancel()
+		if err != nil {
+			continue
+		}
+
+		return msg, true
+	}
+
+	return kafkago.Message{}, false
+}
+
+func topicPartitions(t *testing.T, brokers []string, topic string) []int {
+	t.Helper()
+	conn, err := kafkago.Dial("tcp", brokers[0])
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	partitions, err := conn.ReadPartitions(topic)
+	require.NoError(t, err)
+
+	ids := make([]int, 0, len(partitions))
+	for _, partition := range partitions {
+		ids = append(ids, partition.ID)
+	}
+
+	return ids
+}
+
+func TestConsumer_ValidMessage_Processed(t *testing.T) {
+	brokers := integration.GetTestKafka(t)
+	const rawTopic = "test-agent-raw"
+	const dlqTopic = "test-agent-raw-dlq"
+	const processedTopic = "test-agent-processed"
+	createTopic(t, brokers, rawTopic)
+	createTopic(t, brokers, dlqTopic)
+	createTopic(t, brokers, processedTopic)
+
+	producer := kafkaproducer.NewProducer(brokers, processedTopic)
+	t.Cleanup(func() { _ = producer.Close() })
+	grouper := agentservice.NewGrouper(50*time.Millisecond, producer, noopLogger())
+	t.Cleanup(func() { _ = grouper.Close(context.Background()) })
+
+	processor := agentservice.NewProcessor(agentservice.Config{
+		Filtering: agentservice.FilteringConfig{
+			MinLength: 10,
+		},
+		Summarization: agentservice.SummarizationConfig{
+			Threshold: 500,
+		},
+		Prioritization: agentservice.PrioritizationConfig{
+			HighKeywords: []string{"critical", "urgent", "breaking", "security"},
+			LowKeywords:  []string{"minor", "typo", "chore", "docs"},
+		},
+	}, agentservice.NewStubSummarizer(), grouper, noopLogger())
+	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-valid", dlqTopic, processor, noopLogger())
+	t.Cleanup(func() { _ = consumer.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go consumer.Start(ctx)
+
+	body, _ := json.Marshal(pkgdomain.LinkUpdate{
+		ID:          1,
+		URL:         "https://github.com/x/y",
+		Author:      "user",
+		Description: "This is a critical update text that is definitely valid",
+		TgChatIDs:   []int64{1, 2},
+	})
+	writeMsg(t, brokers, rawTopic, body)
+
+	update, ok := readProcessed(t, brokers, processedTopic, 15*time.Second)
+	require.True(t, ok, "валидное сообщение должно попасть в processed topic")
+	assert.Equal(t, int64(1), update.ID)
+	assert.Equal(t, "HIGH", update.Priority)
+	assert.Equal(t, "user", update.Author)
+}
+
+func TestConsumer_InvalidJSON_DoesNotCrash(t *testing.T) {
+	brokers := integration.GetTestKafka(t)
+	const rawTopic = "test-agent-invalid-json"
+	const dlqTopic = "test-agent-invalid-json-dlq"
+	const processedTopic = "test-agent-invalid-json-processed"
+	createTopic(t, brokers, rawTopic)
+	createTopic(t, brokers, dlqTopic)
+	createTopic(t, brokers, processedTopic)
+
+	producer := kafkaproducer.NewProducer(brokers, processedTopic)
+	t.Cleanup(func() { _ = producer.Close() })
+	grouper := agentservice.NewGrouper(50*time.Millisecond, producer, noopLogger())
+	t.Cleanup(func() { _ = grouper.Close(context.Background()) })
+
+	processor := agentservice.NewProcessor(agentservice.Config{
+		Filtering: agentservice.FilteringConfig{
+			MinLength: 1,
+		},
+		Summarization: agentservice.SummarizationConfig{
+			Threshold: 500,
+		},
+	}, agentservice.NewStubSummarizer(), grouper, noopLogger())
+	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-invalid", dlqTopic, processor, noopLogger())
+	t.Cleanup(func() { _ = consumer.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go consumer.Start(ctx)
+
+	writeMsg(t, brokers, rawTopic, []byte("not json at all {{{"))
+
+	_, ok := readProcessed(t, brokers, processedTopic, 3*time.Second)
+	assert.False(t, ok, "невалидный JSON не должен публиковаться в processed topic")
+
+	msg, ok := readRawMessage(t, brokers, dlqTopic, 10*time.Second)
+	require.True(t, ok, "невалидный JSON должен уходить в DLQ")
+	assert.Equal(t, []byte("not json at all {{{"), msg.Value)
+}
+
+func TestConsumer_FilteredMessage_NotPublished(t *testing.T) {
+	brokers := integration.GetTestKafka(t)
+	const rawTopic = "test-agent-filtered"
+	const dlqTopic = "test-agent-filtered-dlq"
+	const processedTopic = "test-agent-filtered-processed"
+	createTopic(t, brokers, rawTopic)
+	createTopic(t, brokers, dlqTopic)
+	createTopic(t, brokers, processedTopic)
+
+	producer := kafkaproducer.NewProducer(brokers, processedTopic)
+	t.Cleanup(func() { _ = producer.Close() })
+	grouper := agentservice.NewGrouper(50*time.Millisecond, producer, noopLogger())
+	t.Cleanup(func() { _ = grouper.Close(context.Background()) })
+
+	processor := agentservice.NewProcessor(agentservice.Config{
+		Filtering: agentservice.FilteringConfig{
+			StopWords: []string{"spam"},
+			MinLength: 1,
+		},
+		Summarization: agentservice.SummarizationConfig{
+			Threshold: 500,
+		},
+	}, agentservice.NewStubSummarizer(), grouper, noopLogger())
+
+	consumer := kafkaconsumer.NewConsumer(brokers, rawTopic, "cg-agent-filtered", dlqTopic, processor, noopLogger())
+	t.Cleanup(func() { _ = consumer.Close() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go consumer.Start(ctx)
+
+	body, _ := json.Marshal(pkgdomain.LinkUpdate{
+		ID:          2,
+		URL:         "https://github.com/x/z",
+		Author:      "user",
+		Description: "this message contains spam and should be filtered",
+		TgChatIDs:   []int64{1},
+	})
+	writeMsg(t, brokers, rawTopic, body)
+
+	_, ok := readProcessed(t, brokers, processedTopic, 3*time.Second)
+	assert.False(t, ok, "отфильтрованное сообщение не должно попадать в processed topic")
+}

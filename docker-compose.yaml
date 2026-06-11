@@ -21,9 +21,31 @@ services:
       context: .
       dockerfile: build/bot/Dockerfile
     env_file: .env
+    environment:
+      BOT_METRICS_PORT: 8011
+      BOT_KAFKA_TOPIC: link.processed-updates
+      BOT_KAFKA_GROUP_ID: bot-consumer-group
+      BOT_KAFKA_DLQ_TOPIC: link.processed-updates-dlq
     depends_on:
       postgres:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: .
+      dockerfile: build/agent/Dockerfile
+    env_file: .env
+    environment:
+      AI_AGENT_CONFIG_PATH: configs/ai-agent.yaml
+      AGENT_METRICS_PORT: 8012
+      AGENT_KAFKA_INPUT_TOPIC: link.raw-updates
+      AGENT_KAFKA_DLQ_TOPIC: link.raw-updates-dlq
+      AGENT_KAFKA_OUTPUT_TOPIC: link.processed-updates
+      AGENT_KAFKA_GROUP_ID: ai-agent-consumer-group
+    depends_on:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
@@ -33,6 +55,9 @@ services:
       context: .
       dockerfile: build/scrapper/Dockerfile
     env_file: .env
+    environment:
+      SCRAPPER_KAFKA_TOPIC: link.raw-updates
+      VALKEY_ADDRS: valkey-1:6379,valkey-2:6379,valkey-3:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -280,14 +305,28 @@ services:
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 \
           --create --if-not-exists \
-          --topic link-updates \
+          --topic link.raw-updates \
           --partitions 3 \
           --replication-factor 3 \
           --config min.insync.replicas=2 \
           --config retention.ms=604800000
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 \
           --create --if-not-exists \
-          --topic link-updates-dlq \
+          --topic link.processed-updates \
+          --partitions 3 \
+          --replication-factor 3 \
+          --config min.insync.replicas=2 \
+          --config retention.ms=604800000
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 \
+          --create --if-not-exists \
+          --topic link.processed-updates-dlq \
+          --partitions 1 \
+          --replication-factor 3 \
+          --config min.insync.replicas=2 \
+          --config retention.ms=-1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 \
+          --create --if-not-exists \
+          --topic link.raw-updates-dlq \
           --partitions 1 \
           --replication-factor 3 \
           --config min.insync.replicas=2 \
@@ -305,11 +344,43 @@ services:
       kafka-1:
         condition: service_healthy
 
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - bot
+      - scrapper
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
   kafka1data:
   kafka2data:
   kafka3data:
+  prometheusdata:
+  grafanadata:
   valkey1data:
   valkey2data:
   valkey3data:

@@ -1,0 +1,11 @@
+.git
+.gitlab
+.idea
+.vscode
+tmp
+bin
+coverage.out
+*.test
+*.out
+.env
+benchmarks

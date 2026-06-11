@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
+	scrapperservice "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/service"
 )
 
 type subscriptionKey struct {
@@ -126,4 +127,28 @@ func (r *SubscriptionRepository) Exists(ctx context.Context, chatID int64, url s
 
 	_, ok := r.subs[subscriptionKey{chatID, l.ID}]
 	return ok, nil
+}
+
+// CountTrackedBySource returns counts of tracked links grouped by source domain.
+func (r *SubscriptionRepository) CountTrackedBySource(_ context.Context) (map[string]int, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make(map[string]int)
+	for linkID, chatIDs := range r.byLink {
+		if len(chatIDs) == 0 {
+			continue
+		}
+
+		r.linkRepo.mu.RLock()
+		l, ok := r.linkRepo.links[linkID]
+		r.linkRepo.mu.RUnlock()
+		if !ok {
+			continue
+		}
+
+		result[scrapperservice.NormalizeTrackedSourceForMetrics(l.URL)]++
+	}
+
+	return result, nil
 }
