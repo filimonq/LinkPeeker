@@ -15,12 +15,13 @@ import (
 )
 
 const (
-	maxBytes       = 10 * 1024 * 1024 // 10 MB
-	fetchBaseDelay = 1 * time.Second
-	fetchMaxDelay  = 30 * time.Second
-	fetchBackoff   = 2
-	dlqRetryDelay  = 200 * time.Millisecond
-	dlqMaxAttempts = 3
+	maxBytes          = 10 * 1024 * 1024 // 10 MB
+	fetchBaseDelay    = 1 * time.Second
+	fetchMaxDelay     = 30 * time.Second
+	fetchBackoff      = 2
+	dlqRetryBaseDelay = 500 * time.Millisecond
+	dlqRetryMaxDelay  = 5 * time.Second
+	dlqMaxAttempts    = 10
 )
 
 var errDeserialize = errors.New("deserialization error")
@@ -237,6 +238,7 @@ func (c *Consumer) sendToDLQ(ctx context.Context, msg kafka.Message, reason erro
 	}
 
 	var err error
+	delay := dlqRetryBaseDelay
 	for attempt := 1; attempt <= dlqMaxAttempts; attempt++ {
 		err = c.dlqWriter.WriteMessages(ctx, dlqMessage)
 		if err == nil {
@@ -247,6 +249,7 @@ func (c *Consumer) sendToDLQ(ctx context.Context, msg kafka.Message, reason erro
 			slog.String("err", err.Error()),
 			slog.Int("attempt", attempt),
 			slog.Int("max_attempts", dlqMaxAttempts),
+			slog.Duration("retry_in", delay),
 		)
 
 		if attempt == dlqMaxAttempts {
@@ -256,7 +259,12 @@ func (c *Consumer) sendToDLQ(ctx context.Context, msg kafka.Message, reason erro
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("dlq publish canceled: %w", ctx.Err())
-		case <-time.After(dlqRetryDelay):
+		case <-time.After(delay):
+		}
+
+		delay *= fetchBackoff
+		if delay > dlqRetryMaxDelay {
+			delay = dlqRetryMaxDelay
 		}
 	}
 
