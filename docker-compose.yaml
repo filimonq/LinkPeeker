@@ -15,7 +15,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    
+
   bot:
     build:
       context: .
@@ -300,7 +300,7 @@ services:
         condition: service_healthy
       kafka-3:
         condition: service_healthy
-    entrypoint: [ "/bin/bash", "-c" ]
+    entrypoint: ["/bin/bash", "-c"]
     command:
       - |
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 \

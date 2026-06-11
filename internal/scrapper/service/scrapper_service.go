@@ -188,7 +188,13 @@ func (s *scrapperService) ListLinks(ctx context.Context, chatID int64) ([]*link.
 	}
 
 	if s.cache != nil {
-		if cached, cErr := s.cache.Get(ctx, chatID); cErr == nil && cached != nil {
+		cached, cErr := s.cache.Get(ctx, chatID)
+		if cErr != nil {
+			slog.Warn("cache get failed, falling back to db",
+				slog.Int64("chat_id", chatID),
+				slog.String("err", cErr.Error()),
+			)
+		} else if cached != nil {
 			return cached, nil
 		}
 	}
