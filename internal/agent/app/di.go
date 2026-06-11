@@ -10,6 +10,7 @@ import (
 	kafkaconsumer "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/agent/adapter/in/kafka"
 	kafkaproducer "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/agent/adapter/out/kafka"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/agent/service"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/observability"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/resilience"
 )
 
@@ -18,16 +19,20 @@ type Container struct {
 	KafkaConsumer *kafkaconsumer.Consumer
 	KafkaProducer *kafkaproducer.Producer
 	Grouper       *service.Grouper
+	MetricsServer *observability.MetricsServer
 }
 
 // NewContainer builds and wires all dependencies.
 func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
+	metrics := observability.NewAgentMetrics()
 	producer := kafkaproducer.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.OutputTopic)
+	kafkaproducer.WithMetrics(producer, metrics)
 	summarizer, err := buildSummarizer(cfg)
 	if err != nil {
 		return nil, err
 	}
 	grouper := service.NewGrouper(time.Duration(cfg.Grouping.WindowMS)*time.Millisecond, producer, logger)
+	service.WithGrouperMetrics(grouper, metrics)
 	processor := service.NewProcessor(service.Config{
 		Filtering: service.FilteringConfig{
 			StopWords:       cfg.Filtering.StopWords,
@@ -42,6 +47,7 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 			LowKeywords:  cfg.Prioritization.LowKeywords,
 		},
 	}, summarizer, grouper, logger)
+	service.WithProcessorMetrics(processor, metrics)
 
 	consumer := kafkaconsumer.NewConsumer(
 		cfg.Kafka.Brokers,
@@ -51,11 +57,15 @@ func NewContainer(cfg *Config, logger *slog.Logger) (*Container, error) {
 		processor,
 		logger,
 	)
+	kafkaconsumer.WithMetrics(consumer, metrics)
+
+	metricsServer := observability.NewMetricsServer(":"+cfg.MetricsPort, metrics.Registry)
 
 	return &Container{
 		KafkaConsumer: consumer,
 		KafkaProducer: producer,
 		Grouper:       grouper,
+		MetricsServer: metricsServer,
 	}, nil
 }
 

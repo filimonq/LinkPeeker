@@ -31,6 +31,7 @@ type SubscriptionRepository interface {
 	FindByChatID(ctx context.Context, chatID int64, limit, offset int) ([]*link.Link, error)
 	FindChatsByLinkID(ctx context.Context, linkID link.ID) ([]int64, error)
 	Exists(ctx context.Context, chatID int64, url string) (bool, error)
+	CountTrackedBySource(ctx context.Context) (map[string]int, error)
 }
 
 // TagRepository defines storage operations for tags.

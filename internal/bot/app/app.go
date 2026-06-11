@@ -46,6 +46,15 @@ func (a *App) Run() error {
 	}()
 
 	go func() {
+		a.logger.Info("metrics server starting", slog.String("port", a.cfg.MetricsPort))
+		if err = container.MetricsServer.Start(); err != nil {
+			if !errors.Is(err, http.ErrServerClosed) {
+				a.logger.Error("metrics server error", slog.String("error", err.Error()))
+			}
+		}
+	}()
+
+	go func() {
 		container.KafkaConsumer.Start(ctx)
 	}()
 
@@ -59,6 +68,9 @@ func (a *App) Run() error {
 
 	if err = container.HTTPServer.Shutdown(context.Background()); err != nil {
 		a.logger.Error("http server shutdown error", slog.String("error", err.Error()))
+	}
+	if err = container.MetricsServer.Shutdown(context.Background()); err != nil {
+		a.logger.Error("metrics server shutdown error", slog.String("error", err.Error()))
 	}
 
 	return nil

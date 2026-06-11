@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/observability"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/chat"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
 	"golang.org/x/sync/errgroup"
@@ -24,6 +25,7 @@ type scrapperService struct {
 	notifier    BotNotifier
 	outbox      OutboxRepository
 	cache       LinkCache
+	metrics     *observability.ScrapperMetrics
 	workerCount int
 	batchSize   int
 	tx          Transactor
@@ -91,6 +93,7 @@ func (s *scrapperService) DeleteChat(ctx context.Context, chatID int64) error {
 	if err := s.chats.Remove(ctx, chatID); err != nil {
 		return fmt.Errorf("delete chat: %w", err)
 	}
+	s.refreshTrackedLinksMetric(ctx)
 	return nil
 }
 
@@ -131,6 +134,7 @@ func (s *scrapperService) AddLink(ctx context.Context, chatID int64, url string,
 	}
 
 	s.invalidateCache(ctx, chatID)
+	s.refreshTrackedLinksMetric(ctx)
 
 	return &link.WithTags{Link: l, Tags: tags}, nil
 }
@@ -169,6 +173,7 @@ func (s *scrapperService) RemoveLink(ctx context.Context, chatID int64, url stri
 	}
 
 	s.invalidateCache(ctx, chatID)
+	s.refreshTrackedLinksMetric(ctx)
 
 	return result, nil
 }

@@ -86,6 +86,7 @@ type ResilienceConfig struct {
 // Config holds AI agent application configuration.
 type Config struct {
 	Kafka          KafkaConfig
+	MetricsPort    string
 	Filtering      FilteringConfig
 	Summarization  SummarizationConfig
 	Prioritization PrioritizationConfig
@@ -112,7 +113,8 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Kafka: loadKafkaConfig(),
+		Kafka:       loadKafkaConfig(),
+		MetricsPort: getEnv("AGENT_METRICS_PORT", "8012"),
 		Filtering: FilteringConfig{
 			StopWords:       fileConfig.AIAgent.Filtering.StopWords,
 			ExcludedAuthors: fileConfig.AIAgent.Filtering.ExcludedAuthors,

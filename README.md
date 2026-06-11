@@ -45,9 +45,9 @@ ACCESS_TYPE=pgx
 ```
 
 
-### 3. Подними PostgreSQL
+### 3. Подними инфраструктуру
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 ### 4. Запусти сервисы

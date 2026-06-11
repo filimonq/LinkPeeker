@@ -9,6 +9,7 @@ import (
 	"time"
 
 	pkgdomain "gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/domain"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/observability"
 )
 
 const (
@@ -22,6 +23,7 @@ type Grouper struct {
 	publisher Publisher
 	window    time.Duration
 	logger    *slog.Logger
+	metrics   *observability.AgentMetrics
 
 	mu      sync.Mutex
 	entries map[int64]*groupEntry
@@ -47,6 +49,11 @@ func NewGrouper(window time.Duration, publisher Publisher, logger *slog.Logger) 
 	}
 }
 
+func WithGrouperMetrics(g *Grouper, metrics *observability.AgentMetrics) {
+	if g != nil {
+		g.metrics = metrics
+	}
+}
 func (g *Grouper) SendUpdate(ctx context.Context, update pkgdomain.LinkUpdate) error {
 	if len(update.TgChatIDs) == 0 {
 		return nil
@@ -54,6 +61,9 @@ func (g *Grouper) SendUpdate(ctx context.Context, update pkgdomain.LinkUpdate) e
 
 	for _, chatID := range update.TgChatIDs {
 		g.enqueue(ctx, chatID, cloneForChat(update, chatID))
+	}
+	if g.metrics != nil {
+		g.metrics.ObservePipelineEvent("group_enqueue", "success")
 	}
 
 	return nil
@@ -159,9 +169,22 @@ func (g *Grouper) publishGrouped(ctx context.Context, chatID int64, updates []pk
 		return nil
 	}
 
+	start := time.Now()
 	grouped := buildGroupedUpdate(chatID, updates)
 	if err := g.publisher.SendUpdate(ctx, grouped); err != nil {
+		if g.metrics != nil {
+			g.metrics.ObserveOperationDuration("grouping", "publish_grouped", time.Since(start))
+			g.metrics.ObservePipelineEvent("group_publish", "error")
+		}
 		return fmt.Errorf("publish grouped update: %w", err)
+	}
+	if g.metrics != nil {
+		g.metrics.ObserveOperationDuration("grouping", "publish_grouped", time.Since(start))
+		if len(updates) > 1 {
+			g.metrics.ObservePipelineEvent("group_publish", "grouped")
+		} else {
+			g.metrics.ObservePipelineEvent("group_publish", "single")
+		}
 	}
 
 	return nil

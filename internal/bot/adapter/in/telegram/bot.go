@@ -4,11 +4,13 @@ package telegram
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/domain/botuser"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/bot/service"
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/observability"
 )
 
 // Bot handles Telegram updates via long polling.
@@ -16,11 +18,12 @@ type Bot struct {
 	api     *tgbotapi.BotAPI
 	service service.BotService
 	logger  *slog.Logger
+	metrics *observability.BotMetrics
 }
 
 // NewBot creates a new Bot instance.
-func NewBot(api *tgbotapi.BotAPI, service service.BotService, logger *slog.Logger) *Bot {
-	return &Bot{api: api, service: service, logger: logger}
+func NewBot(api *tgbotapi.BotAPI, service service.BotService, logger *slog.Logger, metrics *observability.BotMetrics) *Bot {
+	return &Bot{api: api, service: service, logger: logger, metrics: metrics}
 }
 
 // Start begins polling for updates and blocks until ctx is cancelled.
@@ -55,6 +58,7 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	}
 
 	cmd := b.parseCommand(update.Message)
+	startedAt := time.Now()
 
 	b.logger.Info("received command",
 		slog.String("command", string(cmd.Type)),
@@ -68,7 +72,14 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		b.logger.Error("handle command failed",
 			slog.String("error", err.Error()),
 		)
+		if b.metrics != nil {
+			service.ObserveCommand(b.metrics, cmd.Type, startedAt)
+		}
 		return
+	}
+
+	if b.metrics != nil {
+		service.ObserveCommand(b.metrics, cmd.Type, startedAt)
 	}
 
 	b.sendMessage(response)

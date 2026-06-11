@@ -3,8 +3,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os/signal"
 	"syscall"
 )
@@ -30,6 +32,15 @@ func (a *App) Run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	go func() {
+		a.logger.Info("agent metrics server starting", slog.String("port", a.cfg.MetricsPort))
+		if err = container.MetricsServer.Start(); err != nil {
+			if !errors.Is(err, http.ErrServerClosed) {
+				a.logger.Error("metrics server error", slog.String("error", err.Error()))
+			}
+		}
+	}()
+
 	consumerDone := make(chan struct{})
 	go func() {
 		defer close(consumerDone)
@@ -48,6 +59,9 @@ func (a *App) Run() error {
 	}
 	if err = container.KafkaProducer.Close(); err != nil {
 		a.logger.Error("kafka producer close error", slog.String("error", err.Error()))
+	}
+	if err = container.MetricsServer.Shutdown(context.Background()); err != nil {
+		a.logger.Error("metrics server shutdown error", slog.String("error", err.Error()))
 	}
 
 	return nil
