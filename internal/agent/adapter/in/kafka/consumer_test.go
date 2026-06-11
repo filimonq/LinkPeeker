@@ -50,53 +50,76 @@ func writeMsg(t *testing.T, brokers []string, topic string, value []byte) {
 
 func readProcessed(t *testing.T, brokers []string, topic string, timeout time.Duration) (pkgdomain.LinkUpdate, bool) {
 	t.Helper()
-	r := kafkago.NewReader(kafkago.ReaderConfig{
-		Brokers:     brokers,
-		Topic:       topic,
-		Partition:   0,
-		MinBytes:    1,
-		MaxBytes:    10 * 1024 * 1024,
-		StartOffset: kafkago.FirstOffset,
-	})
-	t.Cleanup(func() { _ = r.Close() })
+	for _, partition := range topicPartitions(t, brokers, topic) {
+		r := kafkago.NewReader(kafkago.ReaderConfig{
+			Brokers:     brokers,
+			Topic:       topic,
+			Partition:   partition,
+			MinBytes:    1,
+			MaxBytes:    10 * 1024 * 1024,
+			StartOffset: kafkago.FirstOffset,
+		})
+		t.Cleanup(func() { _ = r.Close() })
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		msg, err := r.ReadMessage(ctx)
+		cancel()
+		if err != nil {
+			continue
+		}
 
-	msg, err := r.ReadMessage(ctx)
-	if err != nil {
-		return pkgdomain.LinkUpdate{}, false
+		var update pkgdomain.LinkUpdate
+		if err = json.Unmarshal(msg.Value, &update); err != nil {
+			continue
+		}
+
+		return update, true
 	}
 
-	var update pkgdomain.LinkUpdate
-	if err = json.Unmarshal(msg.Value, &update); err != nil {
-		return pkgdomain.LinkUpdate{}, false
-	}
-
-	return update, true
+	return pkgdomain.LinkUpdate{}, false
 }
 
 func readRawMessage(t *testing.T, brokers []string, topic string, timeout time.Duration) (kafkago.Message, bool) {
 	t.Helper()
-	r := kafkago.NewReader(kafkago.ReaderConfig{
-		Brokers:     brokers,
-		Topic:       topic,
-		Partition:   0,
-		MinBytes:    1,
-		MaxBytes:    10 * 1024 * 1024,
-		StartOffset: kafkago.FirstOffset,
-	})
-	t.Cleanup(func() { _ = r.Close() })
+	for _, partition := range topicPartitions(t, brokers, topic) {
+		r := kafkago.NewReader(kafkago.ReaderConfig{
+			Brokers:     brokers,
+			Topic:       topic,
+			Partition:   partition,
+			MinBytes:    1,
+			MaxBytes:    10 * 1024 * 1024,
+			StartOffset: kafkago.FirstOffset,
+		})
+		t.Cleanup(func() { _ = r.Close() })
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		msg, err := r.ReadMessage(ctx)
+		cancel()
+		if err != nil {
+			continue
+		}
 
-	msg, err := r.ReadMessage(ctx)
-	if err != nil {
-		return kafkago.Message{}, false
+		return msg, true
 	}
 
-	return msg, true
+	return kafkago.Message{}, false
+}
+
+func topicPartitions(t *testing.T, brokers []string, topic string) []int {
+	t.Helper()
+	conn, err := kafkago.Dial("tcp", brokers[0])
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	partitions, err := conn.ReadPartitions(topic)
+	require.NoError(t, err)
+
+	ids := make([]int, 0, len(partitions))
+	for _, partition := range partitions {
+		ids = append(ids, partition.ID)
+	}
+
+	return ids
 }
 
 func TestConsumer_ValidMessage_Processed(t *testing.T) {
