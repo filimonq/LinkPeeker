@@ -127,3 +127,39 @@ func (r *SubscriptionRepository) Exists(ctx context.Context, chatID int64, url s
 	}
 	return exists, nil
 }
+
+// CountTrackedBySource returns counts of tracked links grouped by source domain.
+func (r *SubscriptionRepository) CountTrackedBySource(ctx context.Context) (map[string]int, error) {
+	exec := repository.GetExecutor(ctx, r.db)
+	rows, err := exec.Query(ctx, `
+		SELECT
+			CASE
+				WHEN l.url LIKE 'https://github.com%' THEN 'github'
+				WHEN l.url LIKE 'https://stackoverflow.com%' THEN 'stackoverflow'
+				ELSE 'other'
+			END AS tracked_source,
+			COUNT(DISTINCT l.id)
+		FROM links l
+		JOIN subscriptions s ON s.link_id = l.id
+		GROUP BY tracked_source
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("count tracked links by source: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var source string
+		var count int
+		if err = rows.Scan(&source, &count); err != nil {
+			return nil, fmt.Errorf("scan tracked links by source: %w", err)
+		}
+		result[source] = count
+	}
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+
+	return result, nil
+}

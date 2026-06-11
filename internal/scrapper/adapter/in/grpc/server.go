@@ -8,10 +8,10 @@ import (
 	"net"
 
 	googlegrpc "google.golang.org/grpc"
-
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/pkg/observability"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/chat"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/domain/link"
 	"gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker/internal/scrapper/service"
@@ -26,8 +26,13 @@ type Server struct {
 }
 
 // NewServer creates a new gRPC Server.
-func NewServer(svc service.ScrapperService) *Server {
-	g := googlegrpc.NewServer()
+func NewServer(svc service.ScrapperService, metrics *observability.ScrapperMetrics) *Server {
+	options := make([]googlegrpc.ServerOption, 0, 1)
+	if metrics != nil {
+		options = append(options, googlegrpc.UnaryInterceptor(metrics.UnaryServerInterceptor()))
+	}
+
+	g := googlegrpc.NewServer(options...)
 	s := &Server{svc: svc, grpc: g}
 	scrapperpb.RegisterScrapperServiceServer(g, s)
 	return s
