@@ -13,7 +13,7 @@
 Запуск
 ### 1. Клонируй репозиторий
 ```bash
-git clone https://gitlab.education.tbank.ru/backend-academy-go-2025/homeworks/link-tracker
+git clone git@github.com:filimonq/LinkPeeker.git
 cd link-tracker
 ```
 ### 2. Создай .env файл
